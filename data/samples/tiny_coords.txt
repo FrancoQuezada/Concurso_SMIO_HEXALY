@@ -1,0 +1,21 @@
+# Artificial development sample. Not an official SMIO-Hexaly instance.
+NAME : tiny_coords
+CUSTOMERS : 5
+DEPOTS : 2
+VEHICLE_CAPACITY : 10
+ROUTE_FIXED_COST : 7
+DISTANCE_FORMAT : COORDS
+
+DEPOT_SECTION
+# id opening_cost capacity vehicle_limit x y
+1 100 18 2 0 0
+2 120 18 2 10 0
+
+CUSTOMER_SECTION
+# id demand x y
+101 4 1 1
+102 5 2 0
+103 6 8 1
+104 3 9 0
+105 4 5 4
+EOF

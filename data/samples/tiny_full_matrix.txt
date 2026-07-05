@@ -1,0 +1,32 @@
+# Artificial development sample. Not an official SMIO-Hexaly instance.
+# Matrix order is depots first, then customers:
+# D1 D2 C101 C102 C103 C104 C105
+NAME : tiny_full_matrix
+CUSTOMERS : 5
+DEPOTS : 2
+VEHICLE_CAPACITY : 10
+ROUTE_FIXED_COST : 7
+DISTANCE_FORMAT : FULL_MATRIX
+
+DEPOT_SECTION
+# id opening_cost capacity vehicle_limit
+1 100 18 2
+2 120 18 2
+
+CUSTOMER_SECTION
+# id demand
+101 4
+102 5
+103 6
+104 3
+105 4
+
+DISTANCE_SECTION
+0 10 2 3 9 10 7
+12 0 9 8 2 1 6
+2 10 0 2 8 9 5
+3 8 2 0 7 8 4
+10 2 9 7 0 2 5
+11 1 10 8 2 0 6
+7 5 5 4 5 6 0
+EOF
