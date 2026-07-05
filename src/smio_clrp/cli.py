@@ -7,6 +7,10 @@ from pathlib import Path
 
 from smio_clrp.algorithms.base import SolverConfig
 from smio_clrp.algorithms.constructive.greedy import GreedyNearestDepotSolver
+from smio_clrp.algorithms.constructive.multistart import MultiStartConstructiveSolver
+from smio_clrp.algorithms.constructive.regret import RegretInsertionSolver
+from smio_clrp.algorithms.constructive.savings import SavingsConstructiveSolver
+from smio_clrp.algorithms.local_search.solver import ConstructiveLocalSearchSolver
 from smio_clrp.evaluation.cost import objective_cost
 from smio_clrp.evaluation.validator import validate_solution
 from smio_clrp.io.instance_reader import read_instance
@@ -32,11 +36,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parse_parser.add_argument("instance_path")
     parse_parser.set_defaults(func=_cmd_parse)
 
-    solve_parser = subparsers.add_parser("solve", help="Solve an instance with a baseline algorithm")
+    solve_parser = subparsers.add_parser("solve", help="Solve an instance")
     solve_parser.add_argument("instance_path")
     solve_parser.add_argument("--algorithm", default="greedy_nearest_depot")
     solve_parser.add_argument("--output", required=True)
     solve_parser.add_argument("--seed", type=int, default=1)
+    solve_parser.add_argument("--num-starts", type=int, default=10)
+    solve_parser.add_argument("--time-limit", type=float, default=None)
+    solve_parser.add_argument("--regret-k", type=int, choices=[2, 3], default=2)
+    solve_parser.add_argument("--local-search", action="store_true")
+    solve_parser.add_argument("--max-iterations", type=int, default=50)
     solve_parser.set_defaults(func=_cmd_solve)
 
     validate_parser = subparsers.add_parser("validate", help="Validate a solution")
@@ -54,6 +63,11 @@ def _build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--output-dir", required=True)
     batch_parser.add_argument("--algorithm", default="greedy_nearest_depot")
     batch_parser.add_argument("--seed", type=int, default=1)
+    batch_parser.add_argument("--num-starts", type=int, default=10)
+    batch_parser.add_argument("--time-limit", type=float, default=None)
+    batch_parser.add_argument("--regret-k", type=int, choices=[2, 3], default=2)
+    batch_parser.add_argument("--local-search", action="store_true")
+    batch_parser.add_argument("--max-iterations", type=int, default=50)
     batch_parser.set_defaults(func=_cmd_batch_solve)
     return parser
 
@@ -72,9 +86,8 @@ def _cmd_parse(args: argparse.Namespace) -> int:
 
 
 def _cmd_solve(args: argparse.Namespace) -> int:
-    _ensure_supported_algorithm(args.algorithm)
     instance = read_instance(args.instance_path)
-    solver = GreedyNearestDepotSolver(SolverConfig(seed=args.seed))
+    solver = _make_solver(args)
     result = solver.solve(instance)
     if result.solution is None:
         print(f"feasible: false")
@@ -120,7 +133,6 @@ def _cmd_cost(args: argparse.Namespace) -> int:
 
 
 def _cmd_batch_solve(args: argparse.Namespace) -> int:
-    _ensure_supported_algorithm(args.algorithm)
     instance_dir = Path(args.instance_dir)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -128,7 +140,7 @@ def _cmd_batch_solve(args: argparse.Namespace) -> int:
     rows: list[dict[str, object]] = []
     for instance_path in sorted(instance_dir.glob("*.txt")):
         instance = read_instance(instance_path)
-        solver = GreedyNearestDepotSolver(SolverConfig(seed=args.seed))
+        solver = _make_solver(args)
         result = solver.solve(instance)
         output_path = output_dir / f"{instance_path.stem}.sol"
         error = ""
@@ -158,9 +170,30 @@ def _cmd_batch_solve(args: argparse.Namespace) -> int:
     return 0 if all(row["feasible"] for row in rows) else 1
 
 
-def _ensure_supported_algorithm(algorithm: str) -> None:
-    if algorithm != "greedy_nearest_depot":
-        raise ValueError(f"Unsupported algorithm '{algorithm}'. Available: greedy_nearest_depot")
+def _make_solver(args: argparse.Namespace):
+    config = SolverConfig(
+        seed=args.seed,
+        time_limit_seconds=args.time_limit,
+        metadata={
+            "num_starts": args.num_starts,
+            "regret_k": args.regret_k,
+            "max_iterations": args.max_iterations,
+        },
+    )
+    if args.local_search and args.algorithm != "constructive_ls":
+        args.algorithm = "constructive_ls"
+    if args.algorithm == "greedy_nearest_depot":
+        return GreedyNearestDepotSolver(config)
+    if args.algorithm == "savings":
+        return SavingsConstructiveSolver(config)
+    if args.algorithm == "regret":
+        return RegretInsertionSolver(config)
+    if args.algorithm == "multistart":
+        return MultiStartConstructiveSolver(config)
+    if args.algorithm == "constructive_ls":
+        return ConstructiveLocalSearchSolver(config)
+    available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls"
+    raise ValueError(f"Unsupported algorithm '{args.algorithm}'. Available: {available}")
 
 
 if __name__ == "__main__":
