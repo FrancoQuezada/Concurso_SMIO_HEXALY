@@ -34,10 +34,14 @@ Available constructive and improvement methods:
 - `multistart`: deterministic wrapper that tries several constructive variants and returns the best feasible solution.
 - `constructive_ls`: multistart construction followed by local search.
 - `alns`: Adaptive Large Neighborhood Search seeded by `constructive_ls`.
+- `fixopt`: restricted Fix-and-Optimize intensification over selected depot/route/customer neighborhoods.
+- `hybrid`: ALNS followed by Fix-and-Optimize.
 
 Local search currently includes directed intra-route 2-opt, customer relocation, customer swaps, and route reinsertion. All final solutions are validated before being reported.
 
 The ALNS flow repeatedly destroys part of the incumbent solution, repairs it with feasible insertion, accepts or rejects the candidate, and updates adaptive operator weights. Destroy operators include random customer removal, worst customer removal, Shaw-related removal, route removal, and depot removal. Repair operators include greedy, regret-2, regret-3, and deterministic noisy regret repair. Acceptance options are accept-if-better, simulated annealing, and record-to-record; simulated annealing is the default.
+
+Fix-and-Optimize releases a small neighborhood, keeps the rest of the solution fixed, and rebuilds the released customers with a restricted backend. Neighborhoods include depot, route, boundary customer, expensive customer, and route-pair neighborhoods. The default backend is `auto`: it uses a lazy optional Gurobi hook if available, otherwise falls back to the validated heuristic backend. This is a restricted matheuristic layer, not a full CLRP MIP.
 
 ## CLI
 
@@ -71,9 +75,21 @@ Run ALNS:
 clrp solve data/samples/tiny_coords.txt --algorithm alns --output solutions/tiny_coords_alns.sol --seed 1 --num-starts 20 --max-iterations 500 --time-limit 10
 ```
 
+Run Fix-and-Optimize:
+
+```bash
+clrp solve data/samples/tiny_coords.txt --algorithm fixopt --output solutions/tiny_coords_fixopt.sol --seed 1 --fixopt-iterations 50 --fixopt-time-limit 10 --fixopt-backend heuristic
+```
+
+Run the hybrid ALNS + FixOpt solver:
+
+```bash
+clrp solve data/samples/tiny_coords.txt --algorithm hybrid --output solutions/tiny_coords_hybrid.sol --seed 1 --num-starts 20 --max-iterations 500 --time-limit 20 --fixopt-iterations 50 --fixopt-time-limit 10 --fixopt-backend auto
+```
+
 Useful solve options:
 
-- `--algorithm`: `greedy_nearest_depot`, `savings`, `regret`, `multistart`, `constructive_ls`, or `alns`.
+- `--algorithm`: `greedy_nearest_depot`, `savings`, `regret`, `multistart`, `constructive_ls`, `alns`, `fixopt`, or `hybrid`.
 - `--seed`: deterministic seed for wrappers and future randomized variants.
 - `--num-starts`: number of constructive starts for multistart, constructive local search, and ALNS initialization.
 - `--time-limit`: optional time limit in seconds.
@@ -84,6 +100,11 @@ Useful solve options:
 - `--initial-temperature` and `--cooling-rate`: simulated annealing controls.
 - `--local-search-frequency`: `best`, `never`, or an accepted-move frequency for ALNS local search.
 - `--verbose`: reserved ALNS verbosity flag.
+- `--fixopt-iterations` and `--fixopt-time-limit`: FixOpt iteration and time budgets.
+- `--fixopt-backend`: `auto`, `heuristic`, or `mip`; `mip` requires optional `gurobipy`.
+- `--max-customers-per-subproblem` / `--max-routes-per-subproblem`: restricted subproblem size limits.
+- `--mip-time-limit`: optional restricted MIP backend budget.
+- `--neighborhood-types`: comma-separated FixOpt neighborhood sequence.
 
 Validate a solution:
 
@@ -105,13 +126,13 @@ clrp batch-solve data/samples --output-dir solutions --algorithm constructive_ls
 
 ## Current Limitations
 
-- The current constructive, local-search, and ALNS methods are still simple feasibility-first heuristics, not a competitive final method.
-- Fix-and-optimize solvers remain skeletons.
+- The current constructive, local-search, ALNS, and FixOpt methods are feasibility-first implementations, not a tuned final competition method.
+- The optional MIP backend is a conservative restricted hook and falls back to heuristic reconstruction in this version; it is not a full exact CLRP model.
 - The parser supports the documented official-style format and the artificial samples, but may need minor adjustments once official instances are released.
 - No symmetry, triangle inequality or zero-based contiguous IDs are assumed.
 
 ## Next Steps
 
-1. Calibrate ALNS scores, removal sizes, acceptance schedules, and repair variants.
-2. Add optional exact restricted subproblems for Fix-and-Optimize.
-3. Expand experiment tracking and submission tooling.
+1. Add experiment infrastructure and benchmark workflow.
+2. Calibrate ALNS and FixOpt parameters on official instances when available.
+3. Expand submission metadata and reproducibility tooling.

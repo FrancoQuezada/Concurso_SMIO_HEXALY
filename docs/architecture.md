@@ -11,7 +11,7 @@ This repository uses a `src` layout with one importable package: `smio_clrp`.
 - `algorithms/constructive/`: deterministic constructive heuristics and multistart construction.
 - `algorithms/local_search/`: directed 2-opt, relocate, swap, route reinsertion, and local-search driver.
 - `algorithms/alns/`: ALNS solver, destroy and repair operators, acceptance criteria, adaptive operator selection, and config/state models.
-- `algorithms/fixopt/`: fix-and-optimize and hybrid solver skeletons.
+- `algorithms/fixopt/`: restricted neighborhoods, heuristic backend, optional lazy MIP backend, FixOpt solver, and ALNS+FixOpt hybrid solver.
 - `experiments/`: single-instance and batch runners.
 - `utils/`: logging, seeding, and timing helpers.
 
@@ -50,3 +50,18 @@ Recommended future flow:
 7. Update operator rewards and keep the best feasible solution found.
 
 All distance-sensitive operators use existing directed cost functions, so `FULL_MATRIX` asymmetry is preserved.
+
+## Fix-and-Optimize Flow
+
+`FixOptimizeSolver` receives or builds a feasible solution, then repeatedly:
+
+1. Selects a restricted neighborhood.
+2. Releases a small set of customers while keeping all other routes fixed.
+3. Rebuilds the released customers using the configured backend.
+4. Validates the complete candidate solution.
+5. Accepts only non-worsening candidates by default.
+6. Tracks the best feasible solution and neighborhood statistics.
+
+Neighborhoods cover depots, routes, boundary customers, expensive customers, and route pairs. The heuristic backend is dependency-free and respects vehicle capacity, depot capacity, depot route limits, and directed distances. The MIP backend imports `gurobipy` lazily and remains optional; `backend="auto"` falls back to the heuristic backend when Gurobi is unavailable.
+
+`HybridALNSFixOptSolver` runs ALNS first, then applies FixOpt to the ALNS incumbent and returns the best validated solution.

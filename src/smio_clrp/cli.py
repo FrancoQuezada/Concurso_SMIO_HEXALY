@@ -11,6 +11,7 @@ from smio_clrp.algorithms.constructive.greedy import GreedyNearestDepotSolver
 from smio_clrp.algorithms.constructive.multistart import MultiStartConstructiveSolver
 from smio_clrp.algorithms.constructive.regret import RegretInsertionSolver
 from smio_clrp.algorithms.constructive.savings import SavingsConstructiveSolver
+from smio_clrp.algorithms.fixopt import FixOptimizeSolver, HybridALNSFixOptSolver
 from smio_clrp.algorithms.local_search.solver import ConstructiveLocalSearchSolver
 from smio_clrp.evaluation.cost import objective_cost
 from smio_clrp.evaluation.validator import validate_solution
@@ -53,6 +54,13 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--cooling-rate", type=float, default=0.995)
     solve_parser.add_argument("--local-search-frequency", default="best")
     solve_parser.add_argument("--verbose", action="store_true")
+    solve_parser.add_argument("--fixopt-iterations", type=int, default=50)
+    solve_parser.add_argument("--fixopt-time-limit", type=float, default=None)
+    solve_parser.add_argument("--fixopt-backend", choices=["auto", "heuristic", "mip"], default="auto")
+    solve_parser.add_argument("--max-customers-per-subproblem", type=int, default=12)
+    solve_parser.add_argument("--max-routes-per-subproblem", type=int, default=3)
+    solve_parser.add_argument("--mip-time-limit", type=float, default=5.0)
+    solve_parser.add_argument("--neighborhood-types", default=None)
     solve_parser.set_defaults(func=_cmd_solve)
 
     validate_parser = subparsers.add_parser("validate", help="Validate a solution")
@@ -81,6 +89,13 @@ def _build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--cooling-rate", type=float, default=0.995)
     batch_parser.add_argument("--local-search-frequency", default="best")
     batch_parser.add_argument("--verbose", action="store_true")
+    batch_parser.add_argument("--fixopt-iterations", type=int, default=50)
+    batch_parser.add_argument("--fixopt-time-limit", type=float, default=None)
+    batch_parser.add_argument("--fixopt-backend", choices=["auto", "heuristic", "mip"], default="auto")
+    batch_parser.add_argument("--max-customers-per-subproblem", type=int, default=12)
+    batch_parser.add_argument("--max-routes-per-subproblem", type=int, default=3)
+    batch_parser.add_argument("--mip-time-limit", type=float, default=5.0)
+    batch_parser.add_argument("--neighborhood-types", default=None)
     batch_parser.set_defaults(func=_cmd_batch_solve)
     return parser
 
@@ -197,6 +212,13 @@ def _make_solver(args: argparse.Namespace):
             "cooling_rate": args.cooling_rate,
             "local_search_frequency": args.local_search_frequency,
             "verbose": args.verbose,
+            "fixopt_iterations": args.fixopt_iterations,
+            "fixopt_time_limit": args.fixopt_time_limit,
+            "fixopt_backend": args.fixopt_backend,
+            "max_customers_per_subproblem": args.max_customers_per_subproblem,
+            "max_routes_per_subproblem": args.max_routes_per_subproblem,
+            "mip_time_limit": args.mip_time_limit,
+            "neighborhood_types": args.neighborhood_types,
         },
     )
     if args.local_search and args.algorithm not in {"constructive_ls", "alns"}:
@@ -213,7 +235,11 @@ def _make_solver(args: argparse.Namespace):
         return ConstructiveLocalSearchSolver(config)
     if args.algorithm == "alns":
         return ALNSSolver(config)
-    available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls, alns"
+    if args.algorithm == "fixopt":
+        return FixOptimizeSolver(config=config)
+    if args.algorithm == "hybrid":
+        return HybridALNSFixOptSolver(config)
+    available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls, alns, fixopt, hybrid"
     raise ValueError(f"Unsupported algorithm '{args.algorithm}'. Available: {available}")
 
 

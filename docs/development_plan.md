@@ -29,13 +29,21 @@ Implemented components:
 
 All operators reuse the existing objective and validator and keep compatibility with asymmetric `FULL_MATRIX` distances.
 
-## Phase 3: Fix-and-Optimize
+## Phase 3: Fix-and-Optimize Implemented
 
-Future work: build restricted subproblems over selected depots, customers, or routes. Keep Gurobi optional and isolate exact-solver dependencies behind optional extras.
+Implemented components:
+
+- `fixopt`: selects restricted neighborhoods, rebuilds released customers, validates candidates, and accepts non-worsening solutions by default.
+- Neighborhoods: depot, route, boundary customer, expensive customer, and route-pair neighborhoods.
+- Dependency-free heuristic backend for restricted reconstruction.
+- Optional lazy `gurobipy` backend hook with `backend="auto"` fallback to heuristic.
+- `hybrid`: ALNS followed by Fix-and-Optimize, returning the best validated solution.
+
+The MIP backend is documented as a restricted matheuristic hook, not a full CLRP model.
 
 ## Phase 4: Experiments
 
-Add benchmark runners, parameter sweeps, reproducibility metadata, structured logs, and summary reports.
+Future work: add benchmark runners, parameter sweeps, reproducibility metadata, structured logs, and summary reports.
 
 ## Phase 5: Submission Workflow
 
