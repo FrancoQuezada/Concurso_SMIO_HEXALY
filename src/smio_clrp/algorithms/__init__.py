@@ -1,6 +1,7 @@
 """Algorithm interfaces and solver implementations."""
 
 from smio_clrp.algorithms.base import Solver, SolverConfig, SolverResult
+from smio_clrp.algorithms.alns import ALNSSolver
 from smio_clrp.algorithms.constructive import (
     GreedyNearestDepotSolver,
     MultiStartConstructiveSolver,
@@ -11,6 +12,7 @@ from smio_clrp.algorithms.local_search import ConstructiveLocalSearchSolver, Loc
 
 __all__ = [
     "ConstructiveLocalSearchSolver",
+    "ALNSSolver",
     "GreedyNearestDepotSolver",
     "LocalSearchSolver",
     "MultiStartConstructiveSolver",

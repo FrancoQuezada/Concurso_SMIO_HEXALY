@@ -16,9 +16,18 @@ Implemented components:
 
 All solver outputs are validated before being reported.
 
-## Phase 2: ALNS
+## Phase 2: ALNS Implemented
 
-Future work: implement destroy and repair operators, adaptive weights, acceptance criteria, temperature schedules, and solution pools. Keep all operators compatible with asymmetric distances.
+Implemented components:
+
+- `alns`: starts from `constructive_ls`, iterates destroy/repair, validates candidates, and keeps the best feasible solution.
+- Destroy operators: random customer removal, worst customer removal, Shaw-related removal, route removal, and depot removal.
+- Repair operators: greedy, regret-2, regret-3, and deterministic noise repair.
+- Acceptance criteria: accept-if-better, simulated annealing, and record-to-record.
+- Adaptive roulette-wheel operator selection with segment weight updates and per-operator statistics.
+- Local search integration on new best solutions by default, with optional accepted-move frequency.
+
+All operators reuse the existing objective and validator and keep compatibility with asymmetric `FULL_MATRIX` distances.
 
 ## Phase 3: Fix-and-Optimize
 

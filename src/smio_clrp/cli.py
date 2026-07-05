@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from smio_clrp.algorithms.base import SolverConfig
+from smio_clrp.algorithms.alns import ALNSSolver
 from smio_clrp.algorithms.constructive.greedy import GreedyNearestDepotSolver
 from smio_clrp.algorithms.constructive.multistart import MultiStartConstructiveSolver
 from smio_clrp.algorithms.constructive.regret import RegretInsertionSolver
@@ -46,6 +47,12 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--regret-k", type=int, choices=[2, 3], default=2)
     solve_parser.add_argument("--local-search", action="store_true")
     solve_parser.add_argument("--max-iterations", type=int, default=50)
+    solve_parser.add_argument("--destroy-fraction-min", type=float, default=0.15)
+    solve_parser.add_argument("--destroy-fraction-max", type=float, default=0.35)
+    solve_parser.add_argument("--initial-temperature", type=float, default=10.0)
+    solve_parser.add_argument("--cooling-rate", type=float, default=0.995)
+    solve_parser.add_argument("--local-search-frequency", default="best")
+    solve_parser.add_argument("--verbose", action="store_true")
     solve_parser.set_defaults(func=_cmd_solve)
 
     validate_parser = subparsers.add_parser("validate", help="Validate a solution")
@@ -68,6 +75,12 @@ def _build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--regret-k", type=int, choices=[2, 3], default=2)
     batch_parser.add_argument("--local-search", action="store_true")
     batch_parser.add_argument("--max-iterations", type=int, default=50)
+    batch_parser.add_argument("--destroy-fraction-min", type=float, default=0.15)
+    batch_parser.add_argument("--destroy-fraction-max", type=float, default=0.35)
+    batch_parser.add_argument("--initial-temperature", type=float, default=10.0)
+    batch_parser.add_argument("--cooling-rate", type=float, default=0.995)
+    batch_parser.add_argument("--local-search-frequency", default="best")
+    batch_parser.add_argument("--verbose", action="store_true")
     batch_parser.set_defaults(func=_cmd_batch_solve)
     return parser
 
@@ -178,9 +191,15 @@ def _make_solver(args: argparse.Namespace):
             "num_starts": args.num_starts,
             "regret_k": args.regret_k,
             "max_iterations": args.max_iterations,
+            "destroy_fraction_min": args.destroy_fraction_min,
+            "destroy_fraction_max": args.destroy_fraction_max,
+            "initial_temperature": args.initial_temperature,
+            "cooling_rate": args.cooling_rate,
+            "local_search_frequency": args.local_search_frequency,
+            "verbose": args.verbose,
         },
     )
-    if args.local_search and args.algorithm != "constructive_ls":
+    if args.local_search and args.algorithm not in {"constructive_ls", "alns"}:
         args.algorithm = "constructive_ls"
     if args.algorithm == "greedy_nearest_depot":
         return GreedyNearestDepotSolver(config)
@@ -192,7 +211,9 @@ def _make_solver(args: argparse.Namespace):
         return MultiStartConstructiveSolver(config)
     if args.algorithm == "constructive_ls":
         return ConstructiveLocalSearchSolver(config)
-    available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls"
+    if args.algorithm == "alns":
+        return ALNSSolver(config)
+    available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls, alns"
     raise ValueError(f"Unsupported algorithm '{args.algorithm}'. Available: {available}")
 
 
