@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
@@ -15,6 +14,11 @@ from smio_clrp.algorithms.fixopt import FixOptimizeSolver, HybridALNSFixOptSolve
 from smio_clrp.algorithms.local_search.solver import ConstructiveLocalSearchSolver
 from smio_clrp.evaluation.cost import objective_cost
 from smio_clrp.evaluation.validator import validate_solution
+from smio_clrp.experiments.benchmark import run_benchmark_from_config
+from smio_clrp.experiments.compare import compare_algorithms
+from smio_clrp.experiments.registry import list_best, update_best_registry
+from smio_clrp.experiments.run_batch import BatchConfig, run_batch
+from smio_clrp.experiments.submission import build_submission_bundle
 from smio_clrp.io.instance_reader import read_instance
 from smio_clrp.io.solution_reader import read_solution
 from smio_clrp.io.solution_writer import write_solution
@@ -97,6 +101,32 @@ def _build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--mip-time-limit", type=float, default=5.0)
     batch_parser.add_argument("--neighborhood-types", default=None)
     batch_parser.set_defaults(func=_cmd_batch_solve)
+
+    benchmark_parser = subparsers.add_parser("benchmark", help="Run a JSON-configured benchmark")
+    benchmark_parser.add_argument("--config", required=True)
+    benchmark_parser.set_defaults(func=_cmd_benchmark)
+
+    update_best_parser = subparsers.add_parser("update-best", help="Update local best-solution registry")
+    update_best_parser.add_argument("--instance-dir", required=True)
+    update_best_parser.add_argument("--run-dir", required=True)
+    update_best_parser.add_argument("--best-dir", default="results/best")
+    update_best_parser.add_argument("--replace-ties", action="store_true")
+    update_best_parser.set_defaults(func=_cmd_update_best)
+
+    list_best_parser = subparsers.add_parser("list-best", help="List local best solutions")
+    list_best_parser.add_argument("--best-dir", default="results/best")
+    list_best_parser.set_defaults(func=_cmd_list_best)
+
+    compare_parser = subparsers.add_parser("compare", help="Compare algorithms from a summary CSV")
+    compare_parser.add_argument("--summary-csv", required=True)
+    compare_parser.add_argument("--output-csv", default=None)
+    compare_parser.set_defaults(func=_cmd_compare)
+
+    bundle_parser = subparsers.add_parser("build-submission", help="Build a validated solution bundle")
+    bundle_parser.add_argument("--instance-dir", required=True)
+    bundle_parser.add_argument("--solution-dir", required=True)
+    bundle_parser.add_argument("--output", default=None)
+    bundle_parser.set_defaults(func=_cmd_build_submission)
     return parser
 
 
@@ -161,65 +191,60 @@ def _cmd_cost(args: argparse.Namespace) -> int:
 
 
 def _cmd_batch_solve(args: argparse.Namespace) -> int:
-    instance_dir = Path(args.instance_dir)
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    summary_path = output_dir / "summary.csv"
-    rows: list[dict[str, object]] = []
-    for instance_path in sorted(instance_dir.glob("*.txt")):
-        instance = read_instance(instance_path)
-        solver = _make_solver(args)
-        result = solver.solve(instance)
-        output_path = output_dir / f"{instance_path.stem}.sol"
-        error = ""
-        if result.solution is not None:
-            write_solution(result.solution, output_path, instance=instance)
-        else:
-            error = str(result.metadata.get("error", "solver failed"))
-        rows.append(
-            {
-                "instance": instance.name,
-                "cost": "" if result.cost is None else f"{result.cost:.10f}",
-                "feasible": result.feasible,
-                "runtime": f"{result.runtime_seconds:.6f}",
-                "algorithm": result.algorithm_name,
-                "seed": args.seed,
-                "error": error,
-            }
+    parameters = _solver_parameters_from_args(args)
+    rows = run_batch(
+        BatchConfig(
+            instance_dir=args.instance_dir,
+            output_dir=output_dir.parent,
+            run_id=output_dir.name,
+            algorithms=[args.algorithm],
+            seeds=[args.seed],
+            time_limits={args.algorithm: args.time_limit},
+            algorithm_parameters={args.algorithm: parameters},
+            overwrite=True,
         )
-    with summary_path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(
-            file,
-            fieldnames=["instance", "cost", "feasible", "runtime", "algorithm", "seed", "error"],
-        )
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"summary: {summary_path}")
-    return 0 if all(row["feasible"] for row in rows) else 1
+    )
+    print(f"summary: {output_dir / 'summary.csv'}")
+    return 0 if all(row.feasible for row in rows) else 1
+
+
+def _cmd_benchmark(args: argparse.Namespace) -> int:
+    rows = run_benchmark_from_config(args.config)
+    print(f"runs: {len(rows)}")
+    return 0
+
+
+def _cmd_update_best(args: argparse.Namespace) -> int:
+    accepted = update_best_registry(args.instance_dir, args.run_dir, args.best_dir, args.replace_ties)
+    print(f"accepted: {len(accepted)}")
+    return 0
+
+
+def _cmd_list_best(args: argparse.Namespace) -> int:
+    for row in list_best(args.best_dir):
+        print(f"{row['instance']},{row['cost']},{row['solution_path']}")
+    return 0
+
+
+def _cmd_compare(args: argparse.Namespace) -> int:
+    rows = compare_algorithms(args.summary_csv, args.output_csv)
+    print(f"rows: {len(rows)}")
+    return 0
+
+
+def _cmd_build_submission(args: argparse.Namespace) -> int:
+    output = build_submission_bundle(args.instance_dir, args.solution_dir, args.output)
+    print(f"bundle: {output}")
+    return 0
 
 
 def _make_solver(args: argparse.Namespace):
+    parameters = _solver_parameters_from_args(args)
     config = SolverConfig(
         seed=args.seed,
         time_limit_seconds=args.time_limit,
-        metadata={
-            "num_starts": args.num_starts,
-            "regret_k": args.regret_k,
-            "max_iterations": args.max_iterations,
-            "destroy_fraction_min": args.destroy_fraction_min,
-            "destroy_fraction_max": args.destroy_fraction_max,
-            "initial_temperature": args.initial_temperature,
-            "cooling_rate": args.cooling_rate,
-            "local_search_frequency": args.local_search_frequency,
-            "verbose": args.verbose,
-            "fixopt_iterations": args.fixopt_iterations,
-            "fixopt_time_limit": args.fixopt_time_limit,
-            "fixopt_backend": args.fixopt_backend,
-            "max_customers_per_subproblem": args.max_customers_per_subproblem,
-            "max_routes_per_subproblem": args.max_routes_per_subproblem,
-            "mip_time_limit": args.mip_time_limit,
-            "neighborhood_types": args.neighborhood_types,
-        },
+        metadata=parameters,
     )
     if args.local_search and args.algorithm not in {"constructive_ls", "alns"}:
         args.algorithm = "constructive_ls"
@@ -241,6 +266,27 @@ def _make_solver(args: argparse.Namespace):
         return HybridALNSFixOptSolver(config)
     available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls, alns, fixopt, hybrid"
     raise ValueError(f"Unsupported algorithm '{args.algorithm}'. Available: {available}")
+
+
+def _solver_parameters_from_args(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "num_starts": args.num_starts,
+        "regret_k": args.regret_k,
+        "max_iterations": args.max_iterations,
+        "destroy_fraction_min": args.destroy_fraction_min,
+        "destroy_fraction_max": args.destroy_fraction_max,
+        "initial_temperature": args.initial_temperature,
+        "cooling_rate": args.cooling_rate,
+        "local_search_frequency": args.local_search_frequency,
+        "verbose": args.verbose,
+        "fixopt_iterations": args.fixopt_iterations,
+        "fixopt_time_limit": args.fixopt_time_limit,
+        "fixopt_backend": args.fixopt_backend,
+        "max_customers_per_subproblem": args.max_customers_per_subproblem,
+        "max_routes_per_subproblem": args.max_routes_per_subproblem,
+        "mip_time_limit": args.mip_time_limit,
+        "neighborhood_types": args.neighborhood_types,
+    }
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ This repository uses a `src` layout with one importable package: `smio_clrp`.
 - `algorithms/local_search/`: directed 2-opt, relocate, swap, route reinsertion, and local-search driver.
 - `algorithms/alns/`: ALNS solver, destroy and repair operators, acceptance criteria, adaptive operator selection, and config/state models.
 - `algorithms/fixopt/`: restricted neighborhoods, heuristic backend, optional lazy MIP backend, FixOpt solver, and ALNS+FixOpt hybrid solver.
-- `experiments/`: single-instance and batch runners.
+- `experiments/`: single-instance and batch runners, metadata, benchmark configs, registry, comparison, and submission helpers.
 - `utils/`: logging, seeding, and timing helpers.
 
 ## Data Model
@@ -65,3 +65,16 @@ All distance-sensitive operators use existing directed cost functions, so `FULL_
 Neighborhoods cover depots, routes, boundary customers, expensive customers, and route pairs. The heuristic backend is dependency-free and respects vehicle capacity, depot capacity, depot route limits, and directed distances. The MIP backend imports `gurobipy` lazily and remains optional; `backend="auto"` falls back to the heuristic backend when Gurobi is unavailable.
 
 `HybridALNSFixOptSolver` runs ALNS first, then applies FixOpt to the ALNS incumbent and returns the best validated solution.
+
+## Experiment Workflow
+
+Experiment helpers live under `smio_clrp.experiments` and keep generated artifacts outside source directories:
+
+- `run_single.py`: run one algorithm on one instance, validate output, write solution and metadata.
+- `run_batch.py`: run algorithms/seeds over an instance directory and write a summary CSV.
+- `benchmark.py`: load JSON configs and launch batch runs.
+- `registry.py`: validate run outputs and update `results/best`.
+- `compare.py`: compare algorithms and optional external references.
+- `submission.py`: build zip bundles from validated solution directories.
+
+Generated run outputs, best registries, and submission bundles are ignored by Git except for `.gitkeep` placeholders.

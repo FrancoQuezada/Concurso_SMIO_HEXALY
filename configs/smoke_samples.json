@@ -1,0 +1,24 @@
+{
+  "instance_dir": "data/samples",
+  "output_dir": "results/runs",
+  "run_id": "smoke_samples",
+  "algorithms": ["constructive_ls", "alns"],
+  "seeds": [1],
+  "time_limits": {
+    "constructive_ls": 5,
+    "alns": 5
+  },
+  "algorithm_parameters": {
+    "constructive_ls": {
+      "num_starts": 5,
+      "max_iterations": 20
+    },
+    "alns": {
+      "num_starts": 5,
+      "max_iterations": 50
+    }
+  },
+  "validate_outputs": true,
+  "save_metadata": true,
+  "overwrite": true
+}

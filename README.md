@@ -121,7 +121,25 @@ clrp cost data/samples/tiny_coords.txt solutions/tiny_coords.sol
 Run a batch:
 
 ```bash
-clrp batch-solve data/samples --output-dir solutions --algorithm constructive_ls --seed 1 --num-starts 20
+clrp batch-solve data/samples --output-dir results/runs/smoke_constructive --algorithm constructive_ls --seed 1 --num-starts 20
+```
+
+Run a benchmark config:
+
+```bash
+python scripts/run_benchmark.py --config configs/smoke_samples.json
+```
+
+Update local best solutions:
+
+```bash
+python scripts/update_best_registry.py --instance-dir data/samples --run-dir results/runs/smoke_constructive --best-dir results/best
+```
+
+Build a validated bundle:
+
+```bash
+python scripts/build_submission_bundle.py --instance-dir data/samples --solution-dir results/best --output submissions/smoke_bundle.zip
 ```
 
 ## Current Limitations
@@ -130,9 +148,10 @@ clrp batch-solve data/samples --output-dir solutions --algorithm constructive_ls
 - The optional MIP backend is a conservative restricted hook and falls back to heuristic reconstruction in this version; it is not a full exact CLRP model.
 - The parser supports the documented official-style format and the artificial samples, but may need minor adjustments once official instances are released.
 - No symmetry, triangle inequality or zero-based contiguous IDs are assumed.
+- `data/samples` contains development samples only. Future official instances should go under `data/official`.
 
 ## Next Steps
 
-1. Add experiment infrastructure and benchmark workflow.
-2. Calibrate ALNS and FixOpt parameters on official instances when available.
-3. Expand submission metadata and reproducibility tooling.
+1. Calibrate ALNS and FixOpt parameters on official instances when available.
+2. Add performance profiling and parameter tuning workflows.
+3. Prepare final challenge submission checks once official rules are published.

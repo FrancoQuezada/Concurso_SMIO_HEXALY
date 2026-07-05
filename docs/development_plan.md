@@ -41,10 +41,17 @@ Implemented components:
 
 The MIP backend is documented as a restricted matheuristic hook, not a full CLRP model.
 
-## Phase 4: Experiments
+## Phase 4: Experiments Completed
 
-Future work: add benchmark runners, parameter sweeps, reproducibility metadata, structured logs, and summary reports.
+Implemented components:
 
-## Phase 5: Submission Workflow
+- JSON benchmark configs without YAML dependency.
+- Single-run and batch runners with solution output, metadata JSON, and summary CSV.
+- Best-solution registry under `results/best`.
+- Algorithm comparison and reference-gap utilities.
+- Validated submission bundle builder.
+- Scripts and CLI commands for benchmark, best registry, comparison, and bundling.
 
-Add final solution validation gates, cost cross-checks, artifact naming, metadata capture, and scripts for producing challenge-ready submissions.
+## Phase 5: Performance Engineering and Parameter Tuning
+
+Future work once official instances arrive: profile runtime bottlenecks, tune ALNS/FixOpt parameters, expand benchmark reporting, and finalize challenge-specific submission checks.

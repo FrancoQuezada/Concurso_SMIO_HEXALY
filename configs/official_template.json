@@ -1,0 +1,36 @@
+{
+  "instance_dir": "data/official",
+  "output_dir": "results/runs",
+  "run_id": "official_template",
+  "algorithms": ["constructive_ls", "alns", "fixopt", "hybrid"],
+  "seeds": [1],
+  "time_limits": {
+    "constructive_ls": 60,
+    "alns": 300,
+    "fixopt": 300,
+    "hybrid": 600
+  },
+  "algorithm_parameters": {
+    "constructive_ls": {
+      "num_starts": 20,
+      "max_iterations": 100
+    },
+    "alns": {
+      "num_starts": 20,
+      "max_iterations": 1000
+    },
+    "fixopt": {
+      "fixopt_iterations": 100,
+      "fixopt_backend": "auto"
+    },
+    "hybrid": {
+      "num_starts": 20,
+      "max_iterations": 1000,
+      "fixopt_iterations": 100,
+      "fixopt_backend": "auto"
+    }
+  },
+  "validate_outputs": true,
+  "save_metadata": true,
+  "overwrite": false
+}

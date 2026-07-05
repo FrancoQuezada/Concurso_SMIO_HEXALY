@@ -12,5 +12,14 @@ dist/
 build/
 *.sol
 *.csv
+*.zip
+results/runs/**
+results/best/**
+submissions/**
 !solutions/.gitkeep
 !experiments/.gitkeep
+!data/official/.gitkeep
+!results/.gitkeep
+!results/runs/.gitkeep
+!results/best/.gitkeep
+!submissions/.gitkeep
