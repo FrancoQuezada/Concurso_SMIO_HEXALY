@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from smio_clrp.algorithms.common import EPS, route_load
+from smio_clrp.algorithms.common import EPS, depot_loads, depot_route_counts, insertion_delta, route_load
 from smio_clrp.core.instance import Instance
 from smio_clrp.core.solution import Route, Solution
-from smio_clrp.evaluation.cost import objective_cost
+from smio_clrp.evaluation.cost import objective_cost, route_distance
 from smio_clrp.evaluation.validator import validate_solution
 
 
@@ -39,44 +39,50 @@ def _reinsert_customers(
 
 
 def _best_partial_insertion(instance: Instance, routes: list[Route], customer_id: int) -> list[Route]:
-    best_routes: list[Route] | None = None
+    """Insert one customer at its cheapest feasible spot, evaluated via route-local
+    distance deltas instead of a full-solution objective_cost per candidate (that was
+    O(n) per candidate -- intractable when called once per released customer above
+    ~100-150 customers)."""
+    demand = instance.customers_by_id[customer_id].demand
+    opened_depot_ids = {route.depot_id for route in routes}
+    loads = depot_loads(instance, routes)
+    counts = depot_route_counts(routes)
+
     best_cost = float("inf")
+    best_move: tuple[int, int] | None = None  # (route_index, position); route_index=-1 means new route
+
     for route_index, route in enumerate(routes):
-        for position in range(len(route.customer_ids) + 1):
-            candidate = [Route(item.depot_id, list(item.customer_ids)) for item in routes]
-            customers = list(candidate[route_index].customer_ids)
-            customers.insert(position, customer_id)
-            candidate[route_index] = Route(route.depot_id, customers)
-            if _partial_constraints_ok(instance, candidate):
-                cost = objective_cost(instance, Solution(instance.name, candidate))
-                if cost < best_cost:
-                    best_routes = candidate
-                    best_cost = cost
-    for depot in instance.depots:
-        candidate = [Route(item.depot_id, list(item.customer_ids)) for item in routes]
-        candidate.append(Route(depot.id, [customer_id]))
-        if _partial_constraints_ok(instance, candidate):
-            cost = objective_cost(instance, Solution(instance.name, candidate))
-            if cost < best_cost:
-                best_routes = candidate
-                best_cost = cost
-    if best_routes is None:
-        raise ValueError(f"No feasible reinsertion for customer {customer_id}")
-    return best_routes
-
-
-def _partial_constraints_ok(instance: Instance, routes: list[Route]) -> bool:
-    depot_loads: dict[int, float] = {}
-    depot_counts: dict[int, int] = {}
-    for route in routes:
-        load = route_load(instance, route)
-        if load > instance.vehicle_capacity + EPS:
-            return False
         depot = instance.depots_by_id[route.depot_id]
-        depot_loads[route.depot_id] = depot_loads.get(route.depot_id, 0.0) + load
-        depot_counts[route.depot_id] = depot_counts.get(route.depot_id, 0) + 1
-        if depot_loads[route.depot_id] > depot.capacity + EPS:
-            return False
-        if depot_counts[route.depot_id] > depot.vehicle_limit:
-            return False
-    return True
+        if route_load(instance, route) + demand > instance.vehicle_capacity + EPS:
+            continue
+        if loads.get(route.depot_id, 0.0) + demand > depot.capacity + EPS:
+            continue
+        for position in range(len(route.customer_ids) + 1):
+            cost = insertion_delta(instance, route, customer_id, position)
+            if cost < best_cost:
+                best_cost = cost
+                best_move = (route_index, position)
+
+    if demand <= instance.vehicle_capacity + EPS:
+        for depot in instance.depots:
+            if loads.get(depot.id, 0.0) + demand > depot.capacity + EPS:
+                continue
+            if counts.get(depot.id, 0) + 1 > depot.vehicle_limit:
+                continue
+            opening_cost = 0.0 if depot.id in opened_depot_ids else depot.opening_cost
+            cost = route_distance(instance, Route(depot.id, [customer_id])) + instance.route_fixed_cost + opening_cost
+            if cost < best_cost:
+                best_cost = cost
+                best_move = (-1, depot.id)
+
+    if best_move is None:
+        raise ValueError(f"No feasible reinsertion for customer {customer_id}")
+
+    route_index, position_or_depot = best_move
+    if route_index == -1:
+        return routes + [Route(position_or_depot, [customer_id])]
+    updated = [Route(item.depot_id, list(item.customer_ids)) for item in routes]
+    customers = list(updated[route_index].customer_ids)
+    customers.insert(position_or_depot, customer_id)
+    updated[route_index] = Route(routes[route_index].depot_id, customers)
+    return updated

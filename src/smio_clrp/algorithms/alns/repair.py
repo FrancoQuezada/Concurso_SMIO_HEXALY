@@ -4,10 +4,10 @@ import random
 from dataclasses import dataclass
 
 from smio_clrp.algorithms.alns.operators import RepairResult
-from smio_clrp.algorithms.common import EPS, route_load
+from smio_clrp.algorithms.common import EPS, depot_loads, depot_route_counts, insertion_delta, route_load
 from smio_clrp.core.instance import Instance
 from smio_clrp.core.solution import Route, Solution
-from smio_clrp.evaluation.cost import objective_cost
+from smio_clrp.evaluation.cost import route_distance
 from smio_clrp.evaluation.validator import validate_solution
 
 
@@ -74,11 +74,22 @@ def _repair(
 ) -> RepairResult:
     routes = [Route(route.depot_id, list(route.customer_ids)) for route in partial_solution.routes]
     remaining = sorted(set(removed_customer_ids))
+
+    # Insertion order is computed once, from regret scores against the initial partial
+    # solution, instead of recomputing every remaining customer's options after each single
+    # insertion (that made repair O(removed^2) calls to _insertion_options -- the dominant
+    # cost once each call itself stopped being O(n) per candidate; measured ~7-10s to repair
+    # ~76 customers on a 350-customer instance before this change). Each customer's actual
+    # insertion spot is still freshly computed against the current routes when it's placed,
+    # so feasibility is exact -- only the *priority order* is based on a one-time snapshot.
     try:
-        while remaining:
-            customer_id, move = _select_insertion(instance, routes, remaining, rng, regret_k, noise)
-            routes = _apply_move(routes, move)
-            remaining.remove(customer_id)
+        order = _insertion_order(instance, routes, remaining, rng, regret_k, noise)
+        for customer_id in order:
+            options = _insertion_options(instance, routes, customer_id, rng, noise)
+            if not options:
+                raise ValueError(f"No feasible insertion for customer {customer_id}")
+            options.sort(key=lambda move: (move.incremental_cost, move.depot_id, move.route_index if move.route_index is not None else -1, move.position))
+            routes = _apply_move(routes, options[0])
     except ValueError as exc:
         return RepairResult(None, False, {"error": str(exc), "remaining": remaining})
 
@@ -89,30 +100,28 @@ def _repair(
     return RepairResult(solution, True, {"cost": validation.cost})
 
 
-def _select_insertion(
+def _insertion_order(
     instance: Instance,
     routes: list[Route],
     remaining: list[int],
     rng: random.Random,
     regret_k: int,
     noise: float,
-) -> tuple[int, InsertionMove]:
-    best_choice: tuple[float, float, int, InsertionMove] | None = None
+) -> list[int]:
+    scored: list[tuple[float, float, int]] = []
     for customer_id in remaining:
         options = _insertion_options(instance, routes, customer_id, rng, noise)
         if not options:
             raise ValueError(f"No feasible insertion for customer {customer_id}")
-        options.sort(key=lambda move: (move.incremental_cost, move.depot_id, move.route_index or -1, move.position))
+        options.sort(key=lambda move: (move.incremental_cost, move.depot_id, move.route_index if move.route_index is not None else -1, move.position))
         if regret_k <= 1:
             regret = -options[0].incremental_cost
         else:
             reference = options[min(regret_k, len(options)) - 1].incremental_cost
             regret = reference - options[0].incremental_cost
-        choice = (regret, -options[0].incremental_cost, -customer_id, options[0])
-        if best_choice is None or choice > best_choice:
-            best_choice = choice
-    assert best_choice is not None
-    return -best_choice[2], best_choice[3]
+        scored.append((-regret, options[0].incremental_cost, customer_id))
+    scored.sort()
+    return [customer_id for _, _, customer_id in scored]
 
 
 def _insertion_options(
@@ -122,32 +131,37 @@ def _insertion_options(
     rng: random.Random,
     noise: float,
 ) -> list[InsertionMove]:
+    """All feasible insertion spots for one customer, scored with route-local distance
+    deltas instead of a full-solution objective_cost per candidate (that was O(n) per
+    candidate -- called for every remaining customer on every repair step, making a single
+    repair O(removed^2 * n) or worse and intractable above ~100-150 customers)."""
     customer = instance.customers_by_id[customer_id]
     if customer.demand > instance.vehicle_capacity + EPS:
         return []
-    base = Solution(instance.name, routes)
-    base_cost = objective_cost(instance, base)
+    opened_depot_ids = {route.depot_id for route in routes}
+    loads = depot_loads(instance, routes)
+    counts = depot_route_counts(routes)
     options: list[InsertionMove] = []
 
     for route_index, route in enumerate(routes):
         if route_load(instance, route) + customer.demand > instance.vehicle_capacity + EPS:
             continue
+        depot = instance.depots_by_id[route.depot_id]
+        if loads.get(route.depot_id, 0.0) + customer.demand > depot.capacity + EPS:
+            continue
         for position in range(len(route.customer_ids) + 1):
-            candidate_routes = [Route(item.depot_id, list(item.customer_ids)) for item in routes]
-            customers = list(candidate_routes[route_index].customer_ids)
-            customers.insert(position, customer_id)
-            candidate_routes[route_index] = Route(route.depot_id, customers)
-            if not _partial_constraints_ok(instance, candidate_routes):
-                continue
-            incremental = objective_cost(instance, Solution(instance.name, candidate_routes)) - base_cost
-            options.append(InsertionMove(customer_id, _with_noise(incremental, rng, noise), route.depot_id, route_index, position))
+            incremental = insertion_delta(instance, route, customer_id, position)
+            options.append(
+                InsertionMove(customer_id, _with_noise(incremental, rng, noise), route.depot_id, route_index, position)
+            )
 
     for depot in sorted(instance.depots, key=lambda item: item.id):
-        candidate_routes = [Route(item.depot_id, list(item.customer_ids)) for item in routes]
-        candidate_routes.append(Route(depot.id, [customer_id]))
-        if not _partial_constraints_ok(instance, candidate_routes):
+        if loads.get(depot.id, 0.0) + customer.demand > depot.capacity + EPS:
             continue
-        incremental = objective_cost(instance, Solution(instance.name, candidate_routes)) - base_cost
+        if counts.get(depot.id, 0) + 1 > depot.vehicle_limit:
+            continue
+        opening_cost = 0.0 if depot.id in opened_depot_ids else depot.opening_cost
+        incremental = route_distance(instance, Route(depot.id, [customer_id])) + instance.route_fixed_cost + opening_cost
         options.append(InsertionMove(customer_id, _with_noise(incremental, rng, noise), depot.id, None, 0))
     return options
 
@@ -167,20 +181,3 @@ def _with_noise(cost: float, rng: random.Random, noise: float) -> float:
     if noise <= 0:
         return cost
     return cost * (1.0 + rng.uniform(-noise, noise))
-
-
-def _partial_constraints_ok(instance: Instance, routes: list[Route]) -> bool:
-    depot_loads: dict[int, float] = {}
-    depot_route_counts: dict[int, int] = {}
-    for route in routes:
-        load = route_load(instance, route)
-        if load > instance.vehicle_capacity + EPS:
-            return False
-        depot = instance.depots_by_id[route.depot_id]
-        depot_loads[route.depot_id] = depot_loads.get(route.depot_id, 0.0) + load
-        depot_route_counts[route.depot_id] = depot_route_counts.get(route.depot_id, 0) + 1
-        if depot_loads[route.depot_id] > depot.capacity + EPS:
-            return False
-        if depot_route_counts[route.depot_id] > depot.vehicle_limit:
-            return False
-    return True

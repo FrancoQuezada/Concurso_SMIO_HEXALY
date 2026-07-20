@@ -11,7 +11,7 @@ from smio_clrp.algorithms.common import EPS, route_load
 from smio_clrp.core.distance import distance
 from smio_clrp.core.instance import Instance
 from smio_clrp.core.solution import Route, Solution
-from smio_clrp.evaluation.cost import objective_cost
+from smio_clrp.evaluation.cost import route_distance
 
 
 DestroyOperator = Callable[[Instance, Solution, random.Random, ALNSConfig], DestroyResult]
@@ -37,14 +37,19 @@ def worst_customer_removal(
     rng: random.Random,
     config: ALNSConfig,
 ) -> DestroyResult:
+    # Score each customer by its own route's distance delta if removed, not by recomputing
+    # the whole solution's objective_cost per customer (that was O(n) per customer, i.e.
+    # O(n^2) overall, and intractable above ~100-150 customers).
     customers = _all_customer_ids(solution)
     remove_count = _removal_count(len(customers), rng, config)
-    base_cost = objective_cost(instance, solution)
     scored = []
-    for customer_id in customers:
-        partial = _remove_customers(solution, {customer_id})
-        saving = base_cost - objective_cost(instance, partial)
-        scored.append((saving, rng.random(), customer_id))
+    for route in solution.routes:
+        base_route_cost = route_distance(instance, route)
+        for position, customer_id in enumerate(route.customer_ids):
+            reduced_customers = route.customer_ids[:position] + route.customer_ids[position + 1 :]
+            reduced_cost = route_distance(instance, Route(route.depot_id, reduced_customers))
+            saving = base_route_cost - reduced_cost
+            scored.append((saving, rng.random(), customer_id))
     removed = [customer_id for _, _, customer_id in sorted(scored, reverse=True)[:remove_count]]
     partial = _remove_customers(solution, set(removed))
     _assert_partial_valid(instance, partial)
