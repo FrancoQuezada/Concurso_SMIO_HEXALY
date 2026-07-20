@@ -18,7 +18,7 @@ clrp = "smio_clrp.cli:main"
 [project.optional-dependencies]
 exact = ["gurobipy"]
 alns = ["alns"]
-clustering = ["k-means-constrained"]
+clustering = []
 dev = ["pytest", "ruff", "mypy"]
 
 [tool.setuptools.packages.find]
