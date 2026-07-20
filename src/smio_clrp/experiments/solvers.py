@@ -11,6 +11,7 @@ from smio_clrp.algorithms.constructive.savings import SavingsConstructiveSolver
 from smio_clrp.algorithms.clustering import ClusteredConstructiveSolver, ClusteredHybridSolver
 from smio_clrp.algorithms.fixopt import FixOptimizeSolver, HybridALNSFixOptSolver
 from smio_clrp.algorithms.local_search.solver import ConstructiveLocalSearchSolver
+from smio_clrp.algorithms.vns import ClusteredHybridALNSVNSSolver, HybridALNSVNSSolver
 
 
 SUPPORTED_ALGORITHMS = {
@@ -22,8 +23,10 @@ SUPPORTED_ALGORITHMS = {
     "alns",
     "fixopt",
     "hybrid",
+    "halns",
     "clustered",
     "clustered_hybrid",
+    "clustered_halns",
 }
 
 
@@ -51,8 +54,12 @@ def make_solver(
         return FixOptimizeSolver(config=config)
     if algorithm == "hybrid":
         return HybridALNSFixOptSolver(config)
+    if algorithm == "halns":
+        return HybridALNSVNSSolver(config)
     if algorithm == "clustered":
         return ClusteredConstructiveSolver(config)
     if algorithm == "clustered_hybrid":
         return ClusteredHybridSolver(config)
+    if algorithm == "clustered_halns":
+        return ClusteredHybridALNSVNSSolver(config)
     raise ValueError(f"Unsupported algorithm '{algorithm}'. Available: {sorted(SUPPORTED_ALGORITHMS)}")

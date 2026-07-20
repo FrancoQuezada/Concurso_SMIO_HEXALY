@@ -75,12 +75,36 @@ class ALNSSolver(Solver):
             repair_selector = AdaptiveRouletteWheel(repair_names)
             annealing = SimulatedAnnealingAcceptance(config.initial_temperature, config.cooling_rate)
             record_acceptance = RecordToRecordAcceptance()
+            vns_kicks = 0
+            vns_improvements = 0
+            vns_gain = 0.0
+            vns_threshold = int(self.config.metadata.get("vns_stagnation_threshold", 50))
+            vns_on_stagnation = bool(self.config.metadata.get("vns_on_stagnation", False))
+            if vns_threshold <= 0:
+                raise ValueError("vns_stagnation_threshold must be positive")
 
             for iteration in range(1, config.max_iterations + 1):
                 if config.time_limit_seconds is not None and time.perf_counter() - start >= config.time_limit_seconds:
                     break
                 if state.no_improve_iterations >= config.max_no_improve:
                     break
+                if (
+                    vns_on_stagnation
+                    and state.no_improve_iterations > 0
+                    and state.no_improve_iterations % vns_threshold == 0
+                ):
+                    previous_cost = state.best_cost
+                    intensified = _intensify_with_vns(instance, state.best_solution, self.config, start)
+                    vns_kicks += 1
+                    if intensified.solution is not None and intensified.cost is not None and intensified.cost + 1e-9 < state.best_cost:
+                        state.best_solution = clone_solution(intensified.solution)
+                        state.best_cost = intensified.cost
+                        state.current_solution = clone_solution(intensified.solution)
+                        state.current_cost = intensified.cost
+                        state.no_improve_iterations = 0
+                        state.best_improvements += 1
+                        vns_improvements += 1
+                        vns_gain += previous_cost - intensified.cost
 
                 state.iterations = iteration
                 destroy_name = destroy_selector.select(rng)
@@ -196,7 +220,15 @@ class ALNSSolver(Solver):
                 runtime_seconds=time.perf_counter() - start,
                 seed=config.seed,
                 algorithm_name=self.algorithm_name,
-                metadata=_metadata(state, destroy_selector, repair_selector, time.perf_counter() - start),
+                metadata=_metadata(
+                    state,
+                    destroy_selector,
+                    repair_selector,
+                    time.perf_counter() - start,
+                    vns_kicks,
+                    vns_improvements,
+                    vns_gain,
+                ),
             )
         except ValueError as exc:
             return SolverResult(
@@ -238,6 +270,15 @@ def _build_initial_solution(instance: Instance, config: ALNSConfig) -> SolverRes
         )
     )
     return solver.solve(instance)
+
+
+def _initial_result(instance: Instance, config: ALNSConfig, initial_solution: Solution | None) -> SolverResult:
+    if initial_solution is None:
+        return _build_initial_solution(instance, config)
+    validation = validate_solution(instance, initial_solution)
+    if not validation.is_feasible:
+        return SolverResult(None, None, False, 0.0, config.seed, "initial", {"error": "; ".join(validation.errors)})
+    return SolverResult(initial_solution, validation.cost, True, 0.0, config.seed, "initial", {"source": "provided"})
 
 
 def _repair_names(config: ALNSConfig) -> list[str]:
@@ -308,6 +349,9 @@ def _metadata(
     destroy_selector: AdaptiveRouletteWheel,
     repair_selector: AdaptiveRouletteWheel,
     runtime_seconds: float,
+    vns_kicks: int = 0,
+    vns_improvements: int = 0,
+    vns_gain: float = 0.0,
 ) -> dict[str, object]:
     return {
         "initial_cost": state.initial_cost,
@@ -320,4 +364,29 @@ def _metadata(
         "destroy_operator_stats": destroy_selector.stats_as_dict(),
         "repair_operator_stats": repair_selector.stats_as_dict(),
         "runtime_seconds": runtime_seconds,
+        "vns_stagnation_kicks": vns_kicks,
+        "vns_stagnation_improvements": vns_improvements,
+        "vns_stagnation_gain": vns_gain,
     }
+
+
+def _intensify_with_vns(
+    instance: Instance,
+    solution: Solution,
+    solver_config: SolverConfig,
+    alns_start: float,
+) -> SolverResult:
+    # Local import avoids coupling the standalone ALNS module to the hybrid at import time.
+    from smio_clrp.algorithms.vns.vns_solver import VNSSolver
+
+    remaining = None
+    if solver_config.time_limit_seconds is not None:
+        remaining = max(0.0, solver_config.time_limit_seconds - (time.perf_counter() - alns_start))
+        kick_limit = float(solver_config.metadata.get("vns_stagnation_time_limit", 2.0))
+        remaining = min(remaining, kick_limit)
+    metadata = dict(solver_config.metadata)
+    metadata["vns_iterations"] = int(metadata.get("vns_stagnation_iterations", 3))
+    return VNSSolver(
+        solution,
+        SolverConfig(seed=solver_config.seed, time_limit_seconds=remaining, metadata=metadata),
+    ).solve(instance)

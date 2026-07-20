@@ -47,14 +47,27 @@ class HybridALNSFixOptSolver(Solver):
 
     def solve(self, instance: Instance) -> SolverResult:
         start = time.perf_counter()
-        alns = ALNSSolver(self.config).solve(instance)
+        alns_budget, configured_fixopt_budget = _hybrid_time_budgets(self.config)
+        alns_config = SolverConfig(
+            seed=self.config.seed,
+            time_limit_seconds=alns_budget,
+            metadata=dict(self.config.metadata),
+        )
+        alns = ALNSSolver(alns_config).solve(instance)
         if alns.solution is None:
             alns.algorithm_name = self.algorithm_name
             return alns
+        elapsed = time.perf_counter() - start
+        remaining_budget = None
+        if self.config.time_limit_seconds is not None:
+            remaining_budget = max(0.0, self.config.time_limit_seconds - elapsed)
+        fixopt_budget = configured_fixopt_budget
+        if remaining_budget is not None:
+            fixopt_budget = remaining_budget if fixopt_budget is None else min(fixopt_budget, remaining_budget)
         fix_config = SolverConfig(
             seed=self.config.seed,
-            time_limit_seconds=self.config.metadata.get("fixopt_time_limit", self.config.time_limit_seconds),
-            metadata=self.config.metadata,
+            time_limit_seconds=fixopt_budget,
+            metadata={**self.config.metadata, "fixopt_time_limit": fixopt_budget},
         )
         fix_start = time.perf_counter()
         fix = FixOptimizeSolver(alns.solution, fix_config).solve(instance)
@@ -79,8 +92,30 @@ class HybridALNSFixOptSolver(Solver):
                 "alns_runtime_seconds": alns.runtime_seconds,
                 "fixopt_runtime_seconds": time.perf_counter() - fix_start,
                 "total_runtime_seconds": time.perf_counter() - start,
+                "alns_time_budget_seconds": alns_budget,
+                "fixopt_time_budget_seconds": fixopt_budget,
             },
         )
+
+
+def _hybrid_time_budgets(config: SolverConfig) -> tuple[float | None, float | None]:
+    """Split the global hybrid budget without allowing either phase to add extra time."""
+    explicit_fixopt_budget = config.metadata.get("fixopt_time_limit")
+    if explicit_fixopt_budget is not None:
+        explicit_fixopt_budget = float(explicit_fixopt_budget)
+        if explicit_fixopt_budget < 0:
+            raise ValueError("fixopt_time_limit must be non-negative")
+    if config.time_limit_seconds is None:
+        return None, explicit_fixopt_budget
+
+    fraction = float(config.metadata.get("hybrid_alns_fraction", 0.75))
+    if not 0 < fraction < 1:
+        raise ValueError("hybrid_alns_fraction must be between 0 and 1")
+    alns_budget = config.time_limit_seconds * fraction
+    reserved_fixopt_budget = config.time_limit_seconds - alns_budget
+    if explicit_fixopt_budget is not None:
+        reserved_fixopt_budget = min(reserved_fixopt_budget, explicit_fixopt_budget)
+    return alns_budget, reserved_fixopt_budget
 
 
 def _run_fixopt(

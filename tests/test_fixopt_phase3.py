@@ -5,7 +5,11 @@ import pytest
 from smio_clrp.algorithms.base import SolverConfig
 from smio_clrp.algorithms.fixopt.backend import BackendUnavailable
 from smio_clrp.algorithms.fixopt.config import FixOptConfig
-from smio_clrp.algorithms.fixopt.fixopt_solver import FixOptimizeSolver, HybridALNSFixOptSolver
+from smio_clrp.algorithms.fixopt.fixopt_solver import (
+    FixOptimizeSolver,
+    HybridALNSFixOptSolver,
+    _hybrid_time_budgets,
+)
 from smio_clrp.algorithms.fixopt.heuristic_backend import HeuristicFixOptBackend
 from smio_clrp.algorithms.fixopt.mip_backend import MIPFixOptBackend, gurobi_available
 from smio_clrp.algorithms.fixopt.neighborhoods import (
@@ -240,3 +244,26 @@ def test_hybrid_cost_is_not_worse_than_constructive_ls_on_coords():
     assert initial.cost is not None
     assert result.cost is not None
     assert result.cost <= initial.cost
+
+
+def test_hybrid_splits_global_time_budget_between_both_phases():
+    config = SolverConfig(seed=1, time_limit_seconds=20, metadata={"hybrid_alns_fraction": 0.75})
+
+    assert _hybrid_time_budgets(config) == (15.0, 5.0)
+
+
+def test_hybrid_explicit_fixopt_budget_is_capped_by_reserved_time():
+    config = SolverConfig(
+        seed=1,
+        time_limit_seconds=20,
+        metadata={"hybrid_alns_fraction": 0.6, "fixopt_time_limit": 3},
+    )
+
+    assert _hybrid_time_budgets(config) == (12.0, 3.0)
+
+
+def test_hybrid_rejects_invalid_alns_fraction():
+    config = SolverConfig(seed=1, time_limit_seconds=20, metadata={"hybrid_alns_fraction": 1.0})
+
+    with pytest.raises(ValueError, match="hybrid_alns_fraction"):
+        _hybrid_time_budgets(config)

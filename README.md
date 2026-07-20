@@ -36,8 +36,10 @@ Available constructive and improvement methods:
 - `alns`: Adaptive Large Neighborhood Search seeded by `constructive_ls`.
 - `fixopt`: restricted Fix-and-Optimize intensification over selected depot/route/customer neighborhoods.
 - `hybrid`: ALNS followed by Fix-and-Optimize.
+- `halns`: cooperative ALNS followed by Variable Neighborhood Search (VNS).
 - `clustered`: capacity-aware customer clustering followed by route/depot construction.
 - `clustered_hybrid`: clustering, then ALNS, then Fix-and-Optimize.
+- `clustered_halns`: capacity-aware clustering, then cooperative ALNS+VNS.
 
 Local search currently includes directed intra-route 2-opt, customer relocation, customer swaps, and route reinsertion. All final solutions are validated before being reported.
 
@@ -83,10 +85,10 @@ Run Fix-and-Optimize:
 clrp solve data/samples/tiny_coords.txt --algorithm fixopt --output solutions/tiny_coords_fixopt.sol --seed 1 --fixopt-iterations 50 --fixopt-time-limit 10 --fixopt-backend heuristic
 ```
 
-Run the hybrid ALNS + FixOpt solver:
+Run the hybrid ALNS + VNS solver:
 
 ```bash
-clrp solve data/samples/tiny_coords.txt --algorithm hybrid --output solutions/tiny_coords_hybrid.sol --seed 1 --num-starts 20 --max-iterations 500 --time-limit 20 --fixopt-iterations 50 --fixopt-time-limit 10 --fixopt-backend auto
+clrp solve data/samples/tiny_coords.txt --algorithm hybrid --output solutions/tiny_coords_hybrid.sol --seed 1 --num-starts 20 --max-iterations 500 --time-limit 20 --hybrid-alns-fraction 0.75 --vns-iterations 50 --vns-shake-fractions 0.05,0.10,0.20,0.30
 ```
 
 Run clustering, ALNS and FixOpt in sequence:
@@ -111,6 +113,12 @@ Useful solve options:
 - `--local-search-frequency`: `best`, `never`, or an accepted-move frequency for ALNS local search.
 - `--verbose`: reserved ALNS verbosity flag.
 - `--fixopt-iterations` and `--fixopt-time-limit`: FixOpt iteration and time budgets.
+- `--hybrid-alns-fraction`: fraction of the hybrid global time budget reserved for ALNS (default `0.75`); VNS receives the remaining time.
+- `--vns-iterations`: maximum VNS shake-and-descent iterations in the hybrid phase.
+- `--vns-local-search-iterations`: local descent limit after each VNS shake.
+- `--vns-shake-fractions`: comma-separated neighborhood strengths used by VNS.
+- `--vns-stagnation-threshold`: ALNS iterations without improvement before a cooperative VNS kick.
+- `--vns-stagnation-iterations`: short VNS iteration budget used by each stagnation kick.
 - `--fixopt-backend`: `auto`, `heuristic`, or `mip`; `mip` requires optional `gurobipy`.
 - `--max-customers-per-subproblem` / `--max-routes-per-subproblem`: restricted subproblem size limits.
 - `--mip-time-limit`: optional restricted MIP backend budget.
