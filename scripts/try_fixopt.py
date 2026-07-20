@@ -8,10 +8,10 @@ instead (e.g. a teammate's ALNS output) -- this is the real competition
 workflow: ALNS produces a first-solution, F&O refines it into the final one.
 
 Usage:
-    python scripts/try_fixopt.py data/samples/fixopt_demo.txt
-    python scripts/try_fixopt.py data/samples/fixopt_demo.txt --backend mip
-    python scripts/try_fixopt.py data/samples/fixopt_demo.txt --iterations 100 --time-limit 60
-    python scripts/try_fixopt.py data/samples/fixopt_demo.txt --initial-solution path/to/alns_result.sol
+    python scripts/try_fixopt.py data/samples/tiny_coords.txt
+    python scripts/try_fixopt.py data/samples/tiny_coords.txt --backend mip
+    python scripts/try_fixopt.py data/samples/tiny_coords.txt --iterations 100 --time-limit 60
+    python scripts/try_fixopt.py data/samples/tiny_coords.txt --initial-solution path/to/alns_result.sol
 """
 from __future__ import annotations
 

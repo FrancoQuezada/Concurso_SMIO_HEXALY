@@ -8,11 +8,14 @@ from smio_clrp.algorithms.constructive import (
     RegretInsertionSolver,
     SavingsConstructiveSolver,
 )
+from smio_clrp.algorithms.clustering import ClusteredConstructiveSolver, ClusteredHybridSolver
 from smio_clrp.algorithms.fixopt import FixOptimizeSolver, HybridALNSFixOptSolver
 from smio_clrp.algorithms.local_search import ConstructiveLocalSearchSolver, LocalSearchSolver
 
 __all__ = [
     "ConstructiveLocalSearchSolver",
+    "ClusteredConstructiveSolver",
+    "ClusteredHybridSolver",
     "ALNSSolver",
     "GreedyNearestDepotSolver",
     "LocalSearchSolver",

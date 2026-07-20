@@ -13,7 +13,7 @@ setup(
     extras_require={
         "exact": ["gurobipy"],
         "alns": ["alns"],
-        "clustering": ["k-means-constrained"],
+        "clustering": [],
         "dev": ["pytest", "ruff", "mypy"],
     },
 )

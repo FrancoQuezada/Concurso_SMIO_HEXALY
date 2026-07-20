@@ -15,7 +15,7 @@ python -m pip install -e ".[dev]"
 Python 3.10 or newer is required. The base package only depends on `numpy`. Optional extras reserve future integrations:
 
 ```bash
-python -m pip install -e ".[exact,alns,clustering,dev]"
+python -m pip install -e ".[exact,alns,dev]"
 ```
 
 ## Tests
@@ -36,6 +36,8 @@ Available constructive and improvement methods:
 - `alns`: Adaptive Large Neighborhood Search seeded by `constructive_ls`.
 - `fixopt`: restricted Fix-and-Optimize intensification over selected depot/route/customer neighborhoods.
 - `hybrid`: ALNS followed by Fix-and-Optimize.
+- `clustered`: capacity-aware customer clustering followed by route/depot construction.
+- `clustered_hybrid`: clustering, then ALNS, then Fix-and-Optimize.
 
 Local search currently includes directed intra-route 2-opt, customer relocation, customer swaps, and route reinsertion. All final solutions are validated before being reported.
 
@@ -87,9 +89,17 @@ Run the hybrid ALNS + FixOpt solver:
 clrp solve data/samples/tiny_coords.txt --algorithm hybrid --output solutions/tiny_coords_hybrid.sol --seed 1 --num-starts 20 --max-iterations 500 --time-limit 20 --fixopt-iterations 50 --fixopt-time-limit 10 --fixopt-backend auto
 ```
 
+Run clustering, ALNS and FixOpt in sequence:
+
+```bash
+clrp solve data/samples/tiny_coords.txt --algorithm clustered_hybrid --cluster-method auto --output solutions/tiny_coords_clustered_hybrid.sol --seed 1 --max-iterations 500 --time-limit 20 --fixopt-iterations 50 --fixopt-time-limit 10
+```
+
+`--cluster-method auto` selects capacity-aware K-Means for `COORDS` instances and capacity-aware K-Medoids for `FULL_MATRIX` instances. K-Medoids uses the average of both directed arcs only while forming clusters; all route evaluation continues to use the original directed distances. Asking for `kmeans` on `FULL_MATRIX` safely falls back to K-Medoids and records that decision in the solver metadata.
+
 Useful solve options:
 
-- `--algorithm`: `greedy_nearest_depot`, `savings`, `regret`, `multistart`, `constructive_ls`, `alns`, `fixopt`, or `hybrid`.
+- `--algorithm`: `greedy_nearest_depot`, `savings`, `regret`, `multistart`, `constructive_ls`, `alns`, `fixopt`, `hybrid`, `clustered`, or `clustered_hybrid`.
 - `--seed`: deterministic seed for wrappers and future randomized variants.
 - `--num-starts`: number of constructive starts for multistart, constructive local search, and ALNS initialization.
 - `--time-limit`: optional time limit in seconds.
@@ -105,6 +115,9 @@ Useful solve options:
 - `--max-customers-per-subproblem` / `--max-routes-per-subproblem`: restricted subproblem size limits.
 - `--mip-time-limit`: optional restricted MIP backend budget.
 - `--neighborhood-types`: comma-separated FixOpt neighborhood sequence.
+- `--cluster-method`: `auto`, `kmeans`, or `kmedoids` for `clustered` and `clustered_hybrid`.
+- `--cluster-count`: optional number of route clusters; it cannot be below the capacity-based minimum.
+- `--cluster-iterations`: maximum improvement passes for the capacity-aware clustering phase.
 
 Validate a solution:
 
