@@ -17,6 +17,8 @@ def swap_customers(instance: Instance, solution: Solution) -> Solution:
     """
     routes = solution.routes
     loads = depot_loads(instance, routes)
+    # Precomputed once, not re-summed inside the O(positions^2) pair loop below.
+    route_loads = [route_load(instance, route) for route in routes]
     positions = [
         (route_index, customer_index)
         for route_index, route in enumerate(routes)
@@ -47,9 +49,9 @@ def swap_customers(instance: Instance, solution: Solution) -> Solution:
             else:
                 demand_first = instance.customers_by_id[first_customer].demand
                 demand_second = instance.customers_by_id[second_customer].demand
-                if route_load(instance, first_route) - demand_first + demand_second > instance.vehicle_capacity + EPS:
+                if route_loads[first_route_index] - demand_first + demand_second > instance.vehicle_capacity + EPS:
                     continue
-                if route_load(instance, second_route) - demand_second + demand_first > instance.vehicle_capacity + EPS:
+                if route_loads[second_route_index] - demand_second + demand_first > instance.vehicle_capacity + EPS:
                     continue
                 if first_route.depot_id != second_route.depot_id:
                     first_depot = instance.depots_by_id[first_route.depot_id]

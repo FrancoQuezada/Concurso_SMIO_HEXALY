@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from dataclasses import replace
 from typing import Iterable
 
+from smio_clrp.core.distance import distance
 from smio_clrp.core.instance import Instance
 from smio_clrp.core.solution import Route, Solution
 from smio_clrp.evaluation.cost import objective_cost, route_distance
@@ -57,12 +58,37 @@ def route_with_customers(route: Route, customer_ids: list[int]) -> Route:
     return replace(route, customer_ids=list(customer_ids))
 
 
+def removal_delta(instance: Instance, route: Route, position: int) -> float:
+    """Cost change (always <= 0) of removing the customer at one position, via the same
+    2-3-edge local computation as insertion_delta's inverse -- O(1) instead of recomputing
+    the whole route's distance before and after."""
+    customers = route.customer_ids
+    size = len(customers)
+    prev_node = ("customer", customers[position - 1]) if position > 0 else ("depot", route.depot_id)
+    next_node = ("customer", customers[position + 1]) if position + 1 < size else ("depot", route.depot_id)
+    removed_node = ("customer", customers[position])
+    removed_edges = distance(instance, prev_node, removed_node) + distance(instance, removed_node, next_node)
+    added_edge = distance(instance, prev_node, next_node)
+    return added_edge - removed_edges
+
+
 def insertion_delta(instance: Instance, route: Route, customer_id: int, position: int) -> float:
-    before = route_distance(instance, route)
-    customers = list(route.customer_ids)
-    customers.insert(position, customer_id)
-    after = route_distance(instance, Route(route.depot_id, customers))
-    return after - before
+    """Cost of inserting one customer at one position, computed from the 2-3 edges that
+    actually change (old prev->next edge removed; prev->new and new->next edges added)
+    instead of recomputing the whole route's distance before and after (that was O(route
+    length) per call -- called once per (customer, route, position) candidate evaluated
+    across the whole search, so it dominated total runtime at real competition scale)."""
+    customers = route.customer_ids
+    size = len(customers)
+    new_node = ("customer", customer_id)
+    if size == 0:
+        depot_node = ("depot", route.depot_id)
+        return distance(instance, depot_node, new_node) + distance(instance, new_node, depot_node)
+    prev_node = ("customer", customers[position - 1]) if position > 0 else ("depot", route.depot_id)
+    next_node = ("customer", customers[position]) if position < size else ("depot", route.depot_id)
+    removed_edge = distance(instance, prev_node, next_node)
+    added_edges = distance(instance, prev_node, new_node) + distance(instance, new_node, next_node)
+    return added_edges - removed_edge
 
 
 def assert_feasible(instance: Instance, solution: Solution) -> Solution:

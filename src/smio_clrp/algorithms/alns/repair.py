@@ -83,9 +83,13 @@ def _repair(
     # insertion spot is still freshly computed against the current routes when it's placed,
     # so feasibility is exact -- only the *priority order* is based on a one-time snapshot.
     try:
-        order = _insertion_order(instance, routes, remaining, rng, regret_k, noise)
+        state = _route_state(instance, routes)
+        order = _insertion_order(instance, routes, state, remaining, rng, regret_k, noise)
         for customer_id in order:
-            options = _insertion_options(instance, routes, customer_id, rng, noise)
+            # routes changed since the last insertion, so state must be rebuilt -- but only
+            # once per customer placed, not once per (customer, route) pair evaluated.
+            state = _route_state(instance, routes)
+            options = _insertion_options(instance, routes, state, customer_id, rng, noise)
             if not options:
                 raise ValueError(f"No feasible insertion for customer {customer_id}")
             options.sort(key=lambda move: (move.incremental_cost, move.depot_id, move.route_index if move.route_index is not None else -1, move.position))
@@ -100,9 +104,23 @@ def _repair(
     return RepairResult(solution, True, {"cost": validation.cost})
 
 
+def _route_state(
+    instance: Instance, routes: list[Route]
+) -> tuple[set[int], dict[int, float], dict[int, int], list[float]]:
+    """Precompute per-depot loads/route-counts and per-route loads once, so repeated
+    feasibility checks across many customers (in _insertion_order, where routes are constant)
+    become list/dict lookups instead of re-summing route demand from scratch every time."""
+    opened_depot_ids = {route.depot_id for route in routes}
+    loads = depot_loads(instance, routes)
+    counts = depot_route_counts(routes)
+    route_loads = [route_load(instance, route) for route in routes]
+    return opened_depot_ids, loads, counts, route_loads
+
+
 def _insertion_order(
     instance: Instance,
     routes: list[Route],
+    state: tuple[set[int], dict[int, float], dict[int, int], list[float]],
     remaining: list[int],
     rng: random.Random,
     regret_k: int,
@@ -110,7 +128,7 @@ def _insertion_order(
 ) -> list[int]:
     scored: list[tuple[float, float, int]] = []
     for customer_id in remaining:
-        options = _insertion_options(instance, routes, customer_id, rng, noise)
+        options = _insertion_options(instance, routes, state, customer_id, rng, noise)
         if not options:
             raise ValueError(f"No feasible insertion for customer {customer_id}")
         options.sort(key=lambda move: (move.incremental_cost, move.depot_id, move.route_index if move.route_index is not None else -1, move.position))
@@ -127,6 +145,7 @@ def _insertion_order(
 def _insertion_options(
     instance: Instance,
     routes: list[Route],
+    state: tuple[set[int], dict[int, float], dict[int, int], list[float]],
     customer_id: int,
     rng: random.Random,
     noise: float,
@@ -135,16 +154,14 @@ def _insertion_options(
     deltas instead of a full-solution objective_cost per candidate (that was O(n) per
     candidate -- called for every remaining customer on every repair step, making a single
     repair O(removed^2 * n) or worse and intractable above ~100-150 customers)."""
+    opened_depot_ids, loads, counts, route_loads = state
     customer = instance.customers_by_id[customer_id]
     if customer.demand > instance.vehicle_capacity + EPS:
         return []
-    opened_depot_ids = {route.depot_id for route in routes}
-    loads = depot_loads(instance, routes)
-    counts = depot_route_counts(routes)
     options: list[InsertionMove] = []
 
     for route_index, route in enumerate(routes):
-        if route_load(instance, route) + customer.demand > instance.vehicle_capacity + EPS:
+        if route_loads[route_index] + customer.demand > instance.vehicle_capacity + EPS:
             continue
         depot = instance.depots_by_id[route.depot_id]
         if loads.get(route.depot_id, 0.0) + customer.demand > depot.capacity + EPS:

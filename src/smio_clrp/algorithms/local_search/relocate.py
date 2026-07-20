@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from smio_clrp.algorithms.common import EPS, depot_loads, depot_route_counts, route_load
+from smio_clrp.algorithms.common import EPS, depot_loads, depot_route_counts, insertion_delta, removal_delta, route_load
 from smio_clrp.core.instance import Instance
 from smio_clrp.core.solution import Route, Solution
 from smio_clrp.evaluation.cost import route_distance
@@ -27,6 +27,11 @@ def relocate_customer(instance: Instance, solution: Solution) -> Solution:
     opened_depot_ids = {route.depot_id for route in routes}
     loads = depot_loads(instance, routes)
     counts = depot_route_counts(routes)
+    # Precomputed once: routes don't change during this search, so re-summing a target
+    # route's demand from scratch on every (source customer, target route) pair evaluated
+    # would be O(n) work repeated O(n) times (routes don't change here, unlike repair.py's
+    # second pass, so there is no reason to ever recompute this mid-search).
+    route_loads = [route_load(instance, route) for route in routes]
 
     best_delta = -EPS
     best_move: tuple[str, int, int, int, int] | None = None
@@ -38,26 +43,21 @@ def relocate_customer(instance: Instance, solution: Solution) -> Solution:
             demand = instance.customers_by_id[customer_id].demand
             remaining = source.customer_ids[:source_position] + source.customer_ids[source_position + 1 :]
             if remaining:
-                reduced_source = Route(source.depot_id, remaining)
-                removal_gain = route_distance(instance, source) - route_distance(instance, reduced_source)
+                removal_gain = -removal_delta(instance, source, source_position)
             else:
                 removal_gain = route_distance(instance, source) + instance.route_fixed_cost
 
             for target_index, target in enumerate(routes):
                 if target_index == source_index:
                     continue
-                if route_load(instance, target) + demand > instance.vehicle_capacity + EPS:
+                if route_loads[target_index] + demand > instance.vehicle_capacity + EPS:
                     continue
                 if target.depot_id != source.depot_id:
                     target_depot = instance.depots_by_id[target.depot_id]
                     if loads[target.depot_id] + demand > target_depot.capacity + EPS:
                         continue
                 for target_position in range(len(target.customer_ids) + 1):
-                    customers = list(target.customer_ids)
-                    customers.insert(target_position, customer_id)
-                    insert_cost = route_distance(instance, Route(target.depot_id, customers)) - route_distance(
-                        instance, target
-                    )
+                    insert_cost = insertion_delta(instance, target, customer_id, target_position)
                     delta = insert_cost - removal_gain
                     if delta < best_delta:
                         best_delta = delta

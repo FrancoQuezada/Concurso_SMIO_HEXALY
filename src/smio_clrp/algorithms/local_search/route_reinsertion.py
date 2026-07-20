@@ -47,13 +47,14 @@ def _best_partial_insertion(instance: Instance, routes: list[Route], customer_id
     opened_depot_ids = {route.depot_id for route in routes}
     loads = depot_loads(instance, routes)
     counts = depot_route_counts(routes)
+    route_loads = [route_load(instance, route) for route in routes]
 
     best_cost = float("inf")
     best_move: tuple[int, int] | None = None  # (route_index, position); route_index=-1 means new route
 
     for route_index, route in enumerate(routes):
         depot = instance.depots_by_id[route.depot_id]
-        if route_load(instance, route) + demand > instance.vehicle_capacity + EPS:
+        if route_loads[route_index] + demand > instance.vehicle_capacity + EPS:
             continue
         if loads.get(route.depot_id, 0.0) + demand > depot.capacity + EPS:
             continue
