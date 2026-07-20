@@ -10,8 +10,9 @@ from smio_clrp.algorithms.constructive.greedy import GreedyNearestDepotSolver
 from smio_clrp.algorithms.constructive.multistart import MultiStartConstructiveSolver
 from smio_clrp.algorithms.constructive.regret import RegretInsertionSolver
 from smio_clrp.algorithms.constructive.savings import SavingsConstructiveSolver
-from smio_clrp.algorithms.fixopt import FixOptimizeSolver, HybridALNSFixOptSolver
+from smio_clrp.algorithms.fixopt import FixOptimizeSolver
 from smio_clrp.algorithms.local_search.solver import ConstructiveLocalSearchSolver
+from smio_clrp.algorithms.vns import ClusteredHybridALNSVNSSolver, HybridALNSVNSSolver
 from smio_clrp.evaluation.cost import objective_cost
 from smio_clrp.evaluation.validator import validate_solution
 from smio_clrp.experiments.benchmark import run_benchmark_from_config
@@ -60,6 +61,13 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--verbose", action="store_true")
     solve_parser.add_argument("--fixopt-iterations", type=int, default=50)
     solve_parser.add_argument("--fixopt-time-limit", type=float, default=None)
+    solve_parser.add_argument("--hybrid-alns-fraction", type=float, default=0.75)
+    solve_parser.add_argument("--vns-iterations", type=int, default=50)
+    solve_parser.add_argument("--vns-local-search-iterations", type=int, default=10)
+    solve_parser.add_argument("--vns-shake-fractions", default="0.05,0.10,0.20,0.30")
+    solve_parser.add_argument("--vns-stagnation-threshold", type=int, default=50)
+    solve_parser.add_argument("--vns-stagnation-iterations", type=int, default=3)
+    solve_parser.add_argument("--vns-operators", default="two_opt_star,route_depot_reassignment")
     solve_parser.add_argument("--fixopt-backend", choices=["auto", "heuristic", "mip"], default="auto")
     solve_parser.add_argument("--max-customers-per-subproblem", type=int, default=12)
     solve_parser.add_argument("--max-routes-per-subproblem", type=int, default=3)
@@ -95,6 +103,13 @@ def _build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--verbose", action="store_true")
     batch_parser.add_argument("--fixopt-iterations", type=int, default=50)
     batch_parser.add_argument("--fixopt-time-limit", type=float, default=None)
+    batch_parser.add_argument("--hybrid-alns-fraction", type=float, default=0.75)
+    batch_parser.add_argument("--vns-iterations", type=int, default=50)
+    batch_parser.add_argument("--vns-local-search-iterations", type=int, default=10)
+    batch_parser.add_argument("--vns-shake-fractions", default="0.05,0.10,0.20,0.30")
+    batch_parser.add_argument("--vns-stagnation-threshold", type=int, default=50)
+    batch_parser.add_argument("--vns-stagnation-iterations", type=int, default=3)
+    batch_parser.add_argument("--vns-operators", default="two_opt_star,route_depot_reassignment")
     batch_parser.add_argument("--fixopt-backend", choices=["auto", "heuristic", "mip"], default="auto")
     batch_parser.add_argument("--max-customers-per-subproblem", type=int, default=12)
     batch_parser.add_argument("--max-routes-per-subproblem", type=int, default=3)
@@ -263,8 +278,10 @@ def _make_solver(args: argparse.Namespace):
     if args.algorithm == "fixopt":
         return FixOptimizeSolver(config=config)
     if args.algorithm == "hybrid":
-        return HybridALNSFixOptSolver(config)
-    available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls, alns, fixopt, hybrid"
+        return HybridALNSVNSSolver(config)
+    if args.algorithm == "clustered_hybrid":
+        return ClusteredHybridALNSVNSSolver(config)
+    available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls, alns, fixopt, hybrid, clustered_hybrid"
     raise ValueError(f"Unsupported algorithm '{args.algorithm}'. Available: {available}")
 
 
@@ -281,6 +298,13 @@ def _solver_parameters_from_args(args: argparse.Namespace) -> dict[str, object]:
         "verbose": args.verbose,
         "fixopt_iterations": args.fixopt_iterations,
         "fixopt_time_limit": args.fixopt_time_limit,
+        "hybrid_alns_fraction": args.hybrid_alns_fraction,
+        "vns_iterations": args.vns_iterations,
+        "vns_local_search_iterations": args.vns_local_search_iterations,
+        "vns_shake_fractions": args.vns_shake_fractions,
+        "vns_stagnation_threshold": args.vns_stagnation_threshold,
+        "vns_stagnation_iterations": args.vns_stagnation_iterations,
+        "vns_operators": args.vns_operators,
         "fixopt_backend": args.fixopt_backend,
         "max_customers_per_subproblem": args.max_customers_per_subproblem,
         "max_routes_per_subproblem": args.max_routes_per_subproblem,

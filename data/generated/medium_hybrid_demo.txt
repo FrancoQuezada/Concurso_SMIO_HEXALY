@@ -1,0 +1,32 @@
+# Artificial development instance designed to compare ALNS and hybrid behavior.
+NAME : medium_hybrid_demo
+CUSTOMERS : 15
+DEPOTS : 3
+VEHICLE_CAPACITY : 25
+ROUTE_FIXED_COST : 15
+DISTANCE_FORMAT : COORDS
+
+DEPOT_SECTION
+# id opening_cost capacity vehicle_limit x y
+1 80 55 3 0 0
+2 95 55 3 100 0
+3 90 55 3 50 90
+
+CUSTOMER_SECTION
+# id demand x y
+101 7 8 9
+102 6 18 4
+103 8 29 16
+104 5 38 7
+105 9 45 31
+106 7 58 12
+107 6 71 5
+108 8 89 13
+109 5 94 29
+110 9 75 42
+111 7 61 57
+112 6 48 72
+113 8 31 63
+114 5 17 48
+115 9 8 72
+EOF

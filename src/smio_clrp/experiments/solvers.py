@@ -8,8 +8,9 @@ from smio_clrp.algorithms.constructive.greedy import GreedyNearestDepotSolver
 from smio_clrp.algorithms.constructive.multistart import MultiStartConstructiveSolver
 from smio_clrp.algorithms.constructive.regret import RegretInsertionSolver
 from smio_clrp.algorithms.constructive.savings import SavingsConstructiveSolver
-from smio_clrp.algorithms.fixopt import FixOptimizeSolver, HybridALNSFixOptSolver
+from smio_clrp.algorithms.fixopt import FixOptimizeSolver
 from smio_clrp.algorithms.local_search.solver import ConstructiveLocalSearchSolver
+from smio_clrp.algorithms.vns import ClusteredHybridALNSVNSSolver, HybridALNSVNSSolver
 
 
 SUPPORTED_ALGORITHMS = {
@@ -21,6 +22,7 @@ SUPPORTED_ALGORITHMS = {
     "alns",
     "fixopt",
     "hybrid",
+    "clustered_hybrid",
 }
 
 
@@ -47,5 +49,7 @@ def make_solver(
     if algorithm == "fixopt":
         return FixOptimizeSolver(config=config)
     if algorithm == "hybrid":
-        return HybridALNSFixOptSolver(config)
+        return HybridALNSVNSSolver(config)
+    if algorithm == "clustered_hybrid":
+        return ClusteredHybridALNSVNSSolver(config)
     raise ValueError(f"Unsupported algorithm '{algorithm}'. Available: {sorted(SUPPORTED_ALGORITHMS)}")

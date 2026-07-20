@@ -11,6 +11,8 @@ from smio_clrp.algorithms.local_search.relocate import relocate_customer
 from smio_clrp.algorithms.local_search.route_reinsertion import route_reinsertion
 from smio_clrp.algorithms.local_search.swap import swap_customers
 from smio_clrp.algorithms.local_search.two_opt import improve_solution_two_opt
+from smio_clrp.algorithms.local_search.two_opt_star import inter_route_two_opt_star
+from smio_clrp.algorithms.local_search.depot_reassignment import reassign_route_depot
 
 
 Operator = Callable[[Instance, Solution], Solution]
@@ -20,6 +22,8 @@ OPERATORS: dict[str, Operator] = {
     "relocate": relocate_customer,
     "swap": swap_customers,
     "route_reinsertion": route_reinsertion,
+    "two_opt_star": inter_route_two_opt_star,
+    "route_depot_reassignment": reassign_route_depot,
 }
 
 
