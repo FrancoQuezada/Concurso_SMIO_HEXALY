@@ -40,9 +40,9 @@ def parse_instance_text(text: str) -> Instance:
             key, value = _parse_header(line, line_number)
             headers[key] = value
         elif section == "DEPOT_SECTION":
-            depots.append(_parse_depot(line, line_number, headers.get("DISTANCE_FORMAT", "")))
+            depots.append(_parse_depot(line, line_number))
         elif section == "CUSTOMER_SECTION":
-            customers.append(_parse_customer(line, line_number, headers.get("DISTANCE_FORMAT", "")))
+            customers.append(_parse_customer(line, line_number))
         elif section == "DISTANCE_SECTION":
             matrix_rows.append(_parse_float_row(line, line_number))
         else:  # pragma: no cover - section is constrained above
@@ -110,37 +110,33 @@ def _parse_header(line: str, line_number: int) -> tuple[str, str]:
     return key, value
 
 
-def _parse_depot(line: str, line_number: int, distance_format: str) -> Depot:
+def _parse_depot(line: str, line_number: int) -> Depot:
+    """Row layout per spec 4.1: depot_id x y opening_cost capacity max_vehicles."""
     parts = line.split()
-    if len(parts) < 4:
+    if len(parts) != 6:
         raise InstanceFormatError(
-            f"Depot line {line_number} must contain id opening_cost capacity vehicle_limit"
+            f"Depot line {line_number} must contain depot_id x y opening_cost capacity max_vehicles"
         )
-    if distance_format.upper() == "COORDS" and len(parts) < 6:
-        raise InstanceFormatError(f"Depot line {line_number} must include x y coordinates")
-    x_y = (_parse_float(parts[4], f"depot x at line {line_number}"), _parse_float(parts[5], f"depot y at line {line_number}")) if len(parts) >= 6 else (None, None)
     return Depot(
         id=_parse_int(parts[0], f"depot id at line {line_number}"),
-        opening_cost=_parse_float(parts[1], f"depot opening cost at line {line_number}"),
-        capacity=_parse_float(parts[2], f"depot capacity at line {line_number}"),
-        vehicle_limit=_parse_int(parts[3], f"depot vehicle limit at line {line_number}"),
-        x=x_y[0],
-        y=x_y[1],
+        x=_parse_float(parts[1], f"depot x at line {line_number}"),
+        y=_parse_float(parts[2], f"depot y at line {line_number}"),
+        opening_cost=_parse_float(parts[3], f"depot opening cost at line {line_number}"),
+        capacity=_parse_float(parts[4], f"depot capacity at line {line_number}"),
+        vehicle_limit=_parse_int(parts[5], f"depot vehicle limit at line {line_number}"),
     )
 
 
-def _parse_customer(line: str, line_number: int, distance_format: str) -> Customer:
+def _parse_customer(line: str, line_number: int) -> Customer:
+    """Row layout per spec 4.1: customer_id x y demand."""
     parts = line.split()
-    if len(parts) < 2:
-        raise InstanceFormatError(f"Customer line {line_number} must contain id demand")
-    if distance_format.upper() == "COORDS" and len(parts) < 4:
-        raise InstanceFormatError(f"Customer line {line_number} must include x y coordinates")
-    x_y = (_parse_float(parts[2], f"customer x at line {line_number}"), _parse_float(parts[3], f"customer y at line {line_number}")) if len(parts) >= 4 else (None, None)
+    if len(parts) != 4:
+        raise InstanceFormatError(f"Customer line {line_number} must contain customer_id x y demand")
     return Customer(
         id=_parse_int(parts[0], f"customer id at line {line_number}"),
-        demand=_parse_float(parts[1], f"customer demand at line {line_number}"),
-        x=x_y[0],
-        y=x_y[1],
+        x=_parse_float(parts[1], f"customer x at line {line_number}"),
+        y=_parse_float(parts[2], f"customer y at line {line_number}"),
+        demand=_parse_float(parts[3], f"customer demand at line {line_number}"),
     )
 
 
