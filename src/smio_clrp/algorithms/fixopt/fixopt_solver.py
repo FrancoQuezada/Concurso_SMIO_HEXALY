@@ -121,7 +121,15 @@ def _run_fixopt(
         if not neighborhood.released_customer_ids:
             skipped_subproblems += 1
             continue
-        result = backend.reoptimize(instance, current, neighborhood, config)
+        try:
+            result = backend.reoptimize(instance, current, neighborhood, config)
+        except Exception:
+            # An unexpected error in one subproblem (e.g. an edge case in a specific
+            # backend on unfamiliar real competition data) must not abort the whole
+            # multi-iteration run and discard every improvement found so far -- treat it
+            # like any other failed subproblem and keep going with the current best.
+            failed_subproblems += 1
+            continue
         if not result.success or result.solution is None:
             failed_subproblems += 1
             continue
