@@ -35,7 +35,19 @@ class ALNSSolver(Solver):
         try:
             config = _config_from_solver_config(self.config)
             rng = random.Random(config.seed)
-            initial = _initial_result(instance, config, self.initial_solution)
+            if self.initial_solution is None:
+                initial = _build_initial_solution(instance, config)
+            else:
+                validation = validate_solution(instance, self.initial_solution)
+                initial = SolverResult(
+                    solution=clone_solution(self.initial_solution) if validation.is_feasible else None,
+                    cost=objective_cost(instance, self.initial_solution) if validation.is_feasible else None,
+                    feasible=validation.is_feasible,
+                    runtime_seconds=0.0,
+                    seed=config.seed,
+                    algorithm_name="provided_initial_solution",
+                    metadata={"validation_errors": validation.errors},
+                )
             if initial.solution is None:
                 return SolverResult(
                     None,

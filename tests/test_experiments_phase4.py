@@ -39,7 +39,7 @@ def test_single_run_solves_sample_and_writes_solution_and_metadata(tmp_path):
     assert json.loads(metadata_path.read_text())["algorithm"] == "constructive_ls"
 
 
-def test_batch_runner_runs_two_algorithms_and_writes_outputs(tmp_path):
+def test_batch_runner_runs_two_algorithms_on_all_sample_instances_and_writes_outputs(tmp_path):
     rows = run_batch(
         BatchConfig(
             instance_dir="data/samples",
@@ -57,7 +57,8 @@ def test_batch_runner_runs_two_algorithms_and_writes_outputs(tmp_path):
     )
 
     run_dir = tmp_path / "batch"
-    assert len(rows) == 4
+    sample_count = len(list(Path("data/samples").glob("*.txt")))
+    assert len(rows) == sample_count * 2
     assert (run_dir / "summary.csv").exists()
     assert list((run_dir / "solutions").rglob("*.sol"))
     assert list((run_dir / "metadata").rglob("*.json"))
@@ -99,8 +100,23 @@ def test_benchmark_config_runs(tmp_path):
 
     rows = run_benchmark_from_config(config_path)
 
-    assert len(rows) == 4
+    sample_count = len(list(Path("data/samples").glob("*.txt")))
+    assert len(rows) == sample_count * 2
     assert (tmp_path / "benchmark" / "summary.csv").exists()
+
+
+def test_batch_runner_allows_missing_official_instance_dir(tmp_path):
+    rows = run_batch(
+        BatchConfig(
+            instance_dir=tmp_path / "official",
+            output_dir=tmp_path / "runs",
+            run_id="official",
+            overwrite=True,
+        )
+    )
+
+    assert rows == []
+    assert (tmp_path / "runs" / "official" / "summary.csv").exists()
 
 
 def test_registry_accepts_feasible_solution_and_writes_best(tmp_path):

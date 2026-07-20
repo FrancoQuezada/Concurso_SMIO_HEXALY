@@ -40,14 +40,14 @@ def format_solution(
 
     lines = [
         f"# instance = {solution.instance_name or (instance.name if instance else '')}",
-        f"COST : {cost:.10f}",
-        f"DEPOTS_OPENED : {len(routes_by_depot)}",
-        f"ROUTES : {sum(len(routes) for routes in routes_by_depot.values())}",
+        f"COST: {cost:.10f}",
+        f"DEPOTS_OPENED: {len(routes_by_depot)}",
+        f"ROUTES: {sum(len(routes) for routes in routes_by_depot.values())}",
     ]
     for depot_id in sorted(routes_by_depot):
         lines.append(f"DEPOT {depot_id}")
         for route in routes_by_depot[depot_id]:
             customers = " ".join(str(customer_id) for customer_id in route.customer_ids)
-            lines.append(f"ROUTE : {customers}")
+            lines.append(f"ROUTE: {customers}")
     lines.append("EOF")
     return "\n".join(lines) + "\n"

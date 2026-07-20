@@ -9,17 +9,17 @@ ROUTE_FIXED_COST : 7
 DISTANCE_FORMAT : FULL_MATRIX
 
 DEPOT_SECTION
-# id opening_cost capacity vehicle_limit
-1 100 18 2
-2 120 18 2
+# depot_id x y opening_cost capacity max_vehicles
+1 0 0 100 18 2
+2 10 0 120 18 2
 
 CUSTOMER_SECTION
-# id demand
-101 4
-102 5
-103 6
-104 3
-105 4
+# customer_id x y demand
+101 1 1 4
+102 2 0 5
+103 8 1 6
+104 9 0 3
+105 5 4 4
 
 DISTANCE_SECTION
 0 10 2 3 9 10 7

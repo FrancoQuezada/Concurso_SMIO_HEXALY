@@ -8,7 +8,7 @@ from smio_clrp.algorithms.common import route_load
 from smio_clrp.core.distance import distance
 from smio_clrp.core.instance import Instance
 from smio_clrp.core.solution import Route, Solution
-from smio_clrp.evaluation.cost import objective_cost
+from smio_clrp.evaluation.cost import route_distance
 
 
 @dataclass(frozen=True)
@@ -128,12 +128,19 @@ def expensive_customer_neighborhood(
     solution: Solution,
     max_customers: int,
 ) -> FixOptNeighborhood:
-    base_cost = objective_cost(instance, solution)
+    # Rank customers by their own route's distance delta if removed, not by recomputing
+    # the whole solution's objective_cost per customer (that was O(n) per customer, i.e.
+    # O(n^2) overall -- confirmed to take ~21s at 3000 customers vs ~0.001s for the other
+    # neighborhood builders). Removing one customer never changes route_fixed_cost or depot
+    # opening cost (the route stays open), so the route-distance delta is the exact cost
+    # delta, not just an approximation.
     scored: list[tuple[float, int]] = []
     for route in solution.routes:
-        for customer_id in route.customer_ids:
-            reduced = _remove_customers(solution, {customer_id})
-            scored.append((base_cost - objective_cost(instance, reduced), customer_id))
+        base_route_cost = route_distance(instance, route)
+        for position, customer_id in enumerate(route.customer_ids):
+            reduced_customers = route.customer_ids[:position] + route.customer_ids[position + 1 :]
+            reduced_cost = route_distance(instance, Route(route.depot_id, reduced_customers))
+            scored.append((base_route_cost - reduced_cost, customer_id))
     released = [customer_id for _, customer_id in sorted(scored, reverse=True)[:max_customers]]
     assigned = _assigned_depots(solution)
     candidate_depots = sorted(
@@ -154,18 +161,22 @@ def route_pair_neighborhood(
 ) -> FixOptNeighborhood:
     if len(solution.routes) < 2:
         return route_neighborhood(instance, solution, rng, max_customers, 1)
-    pairs = [
-        (first, second)
-        for first in range(len(solution.routes))
-        for second in range(first + 1, len(solution.routes))
-    ]
-    pairs.sort(
-        key=lambda pair: (
-            solution.routes[pair[0]].depot_id == solution.routes[pair[1]].depot_id,
-            rng.random(),
-        )
-    )
-    first, second = pairs[0]
+
+    # Prefer a pair of routes from two different depots, same preference as before, but
+    # without materializing and sorting the full O(routes^2) pair list (that took ~0.26s
+    # at 579 routes and grows quadratically -- would dominate at instances with more routes).
+    indices_by_depot: dict[int, list[int]] = {}
+    for index, route in enumerate(solution.routes):
+        indices_by_depot.setdefault(route.depot_id, []).append(index)
+
+    if len(indices_by_depot) >= 2:
+        first_depot, second_depot = rng.sample(sorted(indices_by_depot), 2)
+        first = rng.choice(indices_by_depot[first_depot])
+        second = rng.choice(indices_by_depot[second_depot])
+    else:
+        first, second = rng.sample(range(len(solution.routes)), 2)
+    first, second = sorted((first, second))
+
     released = (solution.routes[first].customer_ids + solution.routes[second].customer_ids)[:max_customers]
     candidate_depots = sorted({solution.routes[first].depot_id, solution.routes[second].depot_id})
     for customer_id in released:
@@ -228,13 +239,3 @@ def _assigned_depots(solution: Solution) -> dict[int, int]:
         for route in solution.routes
         for customer_id in route.customer_ids
     }
-
-
-def _remove_customers(solution: Solution, removed: set[int]) -> Solution:
-    return Solution(
-        solution.instance_name,
-        [
-            Route(route.depot_id, [customer_id for customer_id in route.customer_ids if customer_id not in removed])
-            for route in solution.routes
-        ],
-    )

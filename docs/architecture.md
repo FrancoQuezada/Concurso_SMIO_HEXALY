@@ -9,6 +9,7 @@ This repository uses a `src` layout with one importable package: `smio_clrp`.
 - `evaluation/`: objective computation and feasibility validation.
 - `algorithms/base.py`: common `Solver`, `SolverConfig`, and `SolverResult` interfaces.
 - `algorithms/constructive/`: deterministic constructive heuristics and multistart construction.
+- `algorithms/clustering/`: capacity-aware K-Means/K-Medoids clustering and clustered solver pipelines.
 - `algorithms/local_search/`: directed 2-opt, relocate, swap, route reinsertion, and local-search driver.
 - `algorithms/alns/`: ALNS solver, destroy and repair operators, acceptance criteria, adaptive operator selection, and config/state models.
 - `algorithms/fixopt/`: restricted neighborhoods, heuristic backend, optional lazy MIP backend, FixOpt solver, and ALNS+FixOpt hybrid solver.

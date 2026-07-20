@@ -22,19 +22,19 @@ Supported sections:
 
 Lines beginning with `#` are ignored in instance files. Arbitrary whitespace is accepted.
 
-For development samples, depot rows are:
+Depot rows follow the official spec (section 4.1):
 
 ```text
-id opening_cost capacity vehicle_limit [x y]
+depot_id x y opening_cost capacity max_vehicles
 ```
 
 Customer rows are:
 
 ```text
-id demand [x y]
+customer_id x y demand
 ```
 
-Coordinates are required for `DISTANCE_FORMAT : COORDS`. For `DISTANCE_FORMAT : FULL_MATRIX`, the distance matrix must have size `(depots + customers) x (depots + customers)` and use node order depots first, then customers.
+`x y` are always present, regardless of `DISTANCE_FORMAT` — for `FULL_MATRIX` instances they carry the underlying geographic coordinates even though route costs come from the explicit matrix, not from these coordinates. For `DISTANCE_FORMAT : FULL_MATRIX`, the distance matrix must have size `(depots + customers) x (depots + customers)` and use node order depots first, then customers.
 
 ## Distance Convention
 

@@ -10,7 +10,8 @@ from smio_clrp.algorithms.constructive.greedy import GreedyNearestDepotSolver
 from smio_clrp.algorithms.constructive.multistart import MultiStartConstructiveSolver
 from smio_clrp.algorithms.constructive.regret import RegretInsertionSolver
 from smio_clrp.algorithms.constructive.savings import SavingsConstructiveSolver
-from smio_clrp.algorithms.fixopt import FixOptimizeSolver
+from smio_clrp.algorithms.clustering import ClusteredConstructiveSolver, ClusteredHybridSolver
+from smio_clrp.algorithms.fixopt import FixOptimizeSolver, HybridALNSFixOptSolver
 from smio_clrp.algorithms.local_search.solver import ConstructiveLocalSearchSolver
 from smio_clrp.algorithms.vns import ClusteredHybridALNSVNSSolver, HybridALNSVNSSolver
 from smio_clrp.evaluation.cost import objective_cost
@@ -73,6 +74,9 @@ def _build_parser() -> argparse.ArgumentParser:
     solve_parser.add_argument("--max-routes-per-subproblem", type=int, default=3)
     solve_parser.add_argument("--mip-time-limit", type=float, default=5.0)
     solve_parser.add_argument("--neighborhood-types", default=None)
+    solve_parser.add_argument("--cluster-method", choices=["auto", "kmeans", "kmedoids"], default="auto")
+    solve_parser.add_argument("--cluster-count", type=int, default=None)
+    solve_parser.add_argument("--cluster-iterations", type=int, default=20)
     solve_parser.set_defaults(func=_cmd_solve)
 
     validate_parser = subparsers.add_parser("validate", help="Validate a solution")
@@ -115,6 +119,9 @@ def _build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--max-routes-per-subproblem", type=int, default=3)
     batch_parser.add_argument("--mip-time-limit", type=float, default=5.0)
     batch_parser.add_argument("--neighborhood-types", default=None)
+    batch_parser.add_argument("--cluster-method", choices=["auto", "kmeans", "kmedoids"], default="auto")
+    batch_parser.add_argument("--cluster-count", type=int, default=None)
+    batch_parser.add_argument("--cluster-iterations", type=int, default=20)
     batch_parser.set_defaults(func=_cmd_batch_solve)
 
     benchmark_parser = subparsers.add_parser("benchmark", help="Run a JSON-configured benchmark")
@@ -278,10 +285,16 @@ def _make_solver(args: argparse.Namespace):
     if args.algorithm == "fixopt":
         return FixOptimizeSolver(config=config)
     if args.algorithm == "hybrid":
+        return HybridALNSFixOptSolver(config)
+    if args.algorithm == "halns":
         return HybridALNSVNSSolver(config)
+    if args.algorithm == "clustered":
+        return ClusteredConstructiveSolver(config)
     if args.algorithm == "clustered_hybrid":
+        return ClusteredHybridSolver(config)
+    if args.algorithm == "clustered_halns":
         return ClusteredHybridALNSVNSSolver(config)
-    available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls, alns, fixopt, hybrid, clustered_hybrid"
+    available = "greedy_nearest_depot, savings, regret, multistart, constructive_ls, alns, fixopt, hybrid, halns, clustered, clustered_hybrid, clustered_halns"
     raise ValueError(f"Unsupported algorithm '{args.algorithm}'. Available: {available}")
 
 
@@ -310,6 +323,9 @@ def _solver_parameters_from_args(args: argparse.Namespace) -> dict[str, object]:
         "max_routes_per_subproblem": args.max_routes_per_subproblem,
         "mip_time_limit": args.mip_time_limit,
         "neighborhood_types": args.neighborhood_types,
+        "cluster_method": args.cluster_method,
+        "cluster_count": args.cluster_count,
+        "cluster_iterations": args.cluster_iterations,
     }
 
 

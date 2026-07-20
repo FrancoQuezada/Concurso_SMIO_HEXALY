@@ -1,5 +1,5 @@
 from smio_clrp.algorithms.base import SolverConfig
-from smio_clrp.algorithms.clustering import ClusterFirstSolver
+from smio_clrp.algorithms.clustering import ClusteredConstructiveSolver
 from smio_clrp.algorithms.local_search.solver import ConstructiveLocalSearchSolver
 from smio_clrp.algorithms.local_search.depot_reassignment import reassign_route_depot
 from smio_clrp.algorithms.local_search.two_opt_star import inter_route_two_opt_star
@@ -66,7 +66,7 @@ def test_vns_is_deterministic_for_fixed_seed():
 
 def test_hybrid_algorithm_selects_alns_vns_solver():
     solver = make_solver(
-        "hybrid",
+        "halns",
         seed=1,
         parameters={"max_iterations": 5, "vns_iterations": 5},
     )
@@ -77,7 +77,7 @@ def test_hybrid_algorithm_selects_alns_vns_solver():
 def test_cluster_first_returns_feasible_solution():
     instance = read_instance("data/samples/tiny_coords.txt")
 
-    result = ClusterFirstSolver(SolverConfig(seed=1)).solve(instance)
+    result = ClusteredConstructiveSolver(SolverConfig(seed=1)).solve(instance)
 
     assert result.solution is not None
     assert validate_solution(instance, result.solution).is_feasible
@@ -85,7 +85,7 @@ def test_cluster_first_returns_feasible_solution():
 
 def test_clustered_hybrid_algorithm_selects_clustered_solver():
     solver = make_solver(
-        "clustered_hybrid",
+        "clustered_halns",
         seed=1,
         parameters={"max_iterations": 5, "vns_iterations": 5},
     )

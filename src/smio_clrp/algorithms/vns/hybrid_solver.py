@@ -4,14 +4,14 @@ import time
 
 from smio_clrp.algorithms.alns import ALNSSolver
 from smio_clrp.algorithms.base import Solver, SolverConfig, SolverResult
-from smio_clrp.algorithms.clustering import ClusterFirstSolver
+from smio_clrp.algorithms.clustering import ClusteredConstructiveSolver
 from smio_clrp.algorithms.vns.vns_solver import VNSSolver
 from smio_clrp.core.instance import Instance
 from smio_clrp.core.solution import Solution
 
 
 class HybridALNSVNSSolver(Solver):
-    algorithm_name = "hybrid"
+    algorithm_name = "halns"
 
     def __init__(self, config: SolverConfig | None = None, initial_solution: Solution | None = None) -> None:
         super().__init__(config)
@@ -67,11 +67,11 @@ class HybridALNSVNSSolver(Solver):
 
 
 class ClusteredHybridALNSVNSSolver(Solver):
-    algorithm_name = "clustered_hybrid"
+    algorithm_name = "clustered_halns"
 
     def solve(self, instance: Instance) -> SolverResult:
         start = time.perf_counter()
-        clustered = ClusterFirstSolver(self.config).solve(instance)
+        clustered = ClusteredConstructiveSolver(self.config).solve(instance)
         if clustered.solution is None:
             clustered.algorithm_name = self.algorithm_name
             return clustered

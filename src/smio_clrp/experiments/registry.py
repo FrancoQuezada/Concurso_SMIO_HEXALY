@@ -26,8 +26,11 @@ def update_best_registry(
     summary_rows = _candidate_rows(run_dir)
     accepted: list[dict[str, Any]] = []
     for row in summary_rows:
-        solution_path = Path(row.get("solution_path", ""))
-        if not solution_path.exists():
+        solution_path_text = row.get("solution_path", "")
+        if not solution_path_text:
+            continue
+        solution_path = Path(solution_path_text)
+        if not solution_path.is_file():
             continue
         instance_name = row.get("instance") or _instance_name_from_solution(solution_path)
         if instance_name not in instances:
