@@ -62,18 +62,19 @@ class ALNSSolver(Solver):
             current = clone_solution(initial.solution)
             best = clone_solution(initial.solution)
             initial_cost = objective_cost(instance, initial.solution)
+            effective_temperature = _effective_initial_temperature(config, initial_cost)
             state = ALNSState(
                 current_solution=current,
                 current_cost=initial_cost,
                 best_solution=best,
                 best_cost=initial_cost,
                 initial_cost=initial_cost,
-                temperature=config.initial_temperature,
+                temperature=effective_temperature,
             )
             destroy_selector = AdaptiveRouletteWheel(list(DESTROY_OPERATORS))
             repair_names = _repair_names(config)
             repair_selector = AdaptiveRouletteWheel(repair_names)
-            annealing = SimulatedAnnealingAcceptance(config.initial_temperature, config.cooling_rate)
+            annealing = SimulatedAnnealingAcceptance(effective_temperature, config.cooling_rate)
             record_acceptance = RecordToRecordAcceptance()
 
             for iteration in range(1, config.max_iterations + 1):
@@ -212,6 +213,7 @@ class ALNSSolver(Solver):
 
 def _config_from_solver_config(config: SolverConfig) -> ALNSConfig:
     metadata = config.metadata
+    raw_temperature = metadata.get("initial_temperature")
     return ALNSConfig(
         seed=config.seed,
         max_iterations=int(metadata.get("max_iterations", 500)),
@@ -219,7 +221,7 @@ def _config_from_solver_config(config: SolverConfig) -> ALNSConfig:
         num_starts=int(metadata.get("num_starts", 20)),
         destroy_fraction_min=float(metadata.get("destroy_fraction_min", 0.15)),
         destroy_fraction_max=float(metadata.get("destroy_fraction_max", 0.35)),
-        initial_temperature=float(metadata.get("initial_temperature", 10.0)),
+        initial_temperature=float(raw_temperature) if raw_temperature is not None else None,
         cooling_rate=float(metadata.get("cooling_rate", 0.995)),
         local_search_frequency=str(metadata.get("local_search_frequency", "best")),
         max_no_improve=int(metadata.get("max_no_improve", 150)),
@@ -227,6 +229,17 @@ def _config_from_solver_config(config: SolverConfig) -> ALNSConfig:
         acceptance_method=str(metadata.get("acceptance_method", "simulated_annealing")),
         verbose=bool(metadata.get("verbose", False)),
     )
+
+
+def _effective_initial_temperature(config: ALNSConfig, initial_cost: float) -> float:
+    """Resolve the starting SA temperature. An explicit config value is used as-is
+    (absolute); otherwise scale to 1% of the initial solution's cost, so a worsening
+    move of roughly that size still has a real (~37%) chance of acceptance at the
+    start of the search, regardless of whether the instance's total cost is ~9k or
+    ~500k. See the comment on ALNSConfig.initial_temperature for the empirical basis."""
+    if config.initial_temperature is not None:
+        return config.initial_temperature
+    return max(initial_cost * 0.01, 1e-6)
 
 
 def _build_initial_solution(instance: Instance, config: ALNSConfig) -> SolverResult:
