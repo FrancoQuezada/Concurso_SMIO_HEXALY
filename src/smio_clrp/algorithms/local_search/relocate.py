@@ -45,7 +45,13 @@ def relocate_customer(instance: Instance, solution: Solution) -> Solution:
             if remaining:
                 removal_gain = -removal_delta(instance, source, source_position)
             else:
+                # Emptying the route also closes it; if it was the depot's only route,
+                # the depot's opening_cost is saved too -- omitting this credit makes
+                # depot-closing moves look far less attractive than they really are,
+                # which matters a lot on instances where opening costs dominate.
                 removal_gain = route_distance(instance, source) + instance.route_fixed_cost
+                if counts.get(source.depot_id, 0) == 1:
+                    removal_gain += instance.depots_by_id[source.depot_id].opening_cost
 
             for target_index, target in enumerate(routes):
                 if target_index == source_index:

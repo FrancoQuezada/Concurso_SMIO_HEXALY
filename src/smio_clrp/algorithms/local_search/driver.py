@@ -7,6 +7,7 @@ from smio_clrp.core.instance import Instance
 from smio_clrp.core.solution import Solution
 from smio_clrp.evaluation.cost import objective_cost
 from smio_clrp.evaluation.validator import validate_solution
+from smio_clrp.algorithms.local_search.or_opt import or_opt
 from smio_clrp.algorithms.local_search.relocate import relocate_customer
 from smio_clrp.algorithms.local_search.route_reinsertion import route_reinsertion
 from smio_clrp.algorithms.local_search.swap import swap_customers
@@ -20,6 +21,7 @@ OPERATORS: dict[str, Operator] = {
     "relocate": relocate_customer,
     "swap": swap_customers,
     "route_reinsertion": route_reinsertion,
+    "or_opt": or_opt,
 }
 
 

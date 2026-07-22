@@ -253,7 +253,8 @@ def _make_solver(args: argparse.Namespace):
         time_limit_seconds=args.time_limit,
         metadata=parameters,
     )
-    if args.local_search and args.algorithm not in {"constructive_ls", "alns"}:
+    _base_constructive_algorithms = {"greedy_nearest_depot", "savings", "regret", "multistart"}
+    if args.local_search and args.algorithm in _base_constructive_algorithms:
         args.algorithm = "constructive_ls"
     if args.algorithm == "greedy_nearest_depot":
         return GreedyNearestDepotSolver(config)
