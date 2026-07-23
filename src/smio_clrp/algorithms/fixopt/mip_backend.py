@@ -135,7 +135,17 @@ def _generate_candidate_routes(instance: Instance, neighborhood: FixOptNeighborh
     # otherwise duplicate the singleton loop), so there is no overlap left to deduplicate --
     # the cap now applies to exactly the "extra" multi-customer candidates it's documented to.
     max_subset_size = _max_candidate_subset_size(instance, demand_by_customer)
-    subsets = _feasible_customer_subsets(released, demand_by_customer, instance.vehicle_capacity, max_subset_size)
+    # Bounding by MAX_EXTRA_CANDIDATE_ROUTES here (not just when converting subsets into
+    # candidates below) matters a lot once max_customers_per_subproblem is pushed well past
+    # the ~12-customer default: with enough released customers and low enough per-customer
+    # demand relative to capacity, the number of *feasible* subsets up to max_subset_size is
+    # combinatorial and was previously fully materialized into a list before any truncation
+    # -- confirmed to balloon a single process to ~18GB RSS in under a minute at
+    # max_customers_per_subproblem=60 on a large-scale instance, well before Gurobi ever saw
+    # a candidate.
+    subsets = _feasible_customer_subsets(
+        released, demand_by_customer, instance.vehicle_capacity, max_subset_size, MAX_EXTRA_CANDIDATE_ROUTES
+    )
     extra = 0
     for subset in subsets:
         for depot_id in depot_ids:
@@ -161,17 +171,27 @@ def _feasible_customer_subsets(
     demand: dict[int, float],
     capacity: float,
     max_subset_size: int,
+    limit: int,
 ) -> list[tuple[int, ...]]:
     """Subsets of size >= 2 of released customers whose demand fits one vehicle, up to
     max_subset_size. Size-1 subsets are excluded on purpose: _generate_candidate_routes
     always adds every (customer, depot) singleton separately, so including them here too
-    would just duplicate that work."""
+    would just duplicate that work.
+
+    Stops as soon as `limit` subsets are found, instead of enumerating every feasible
+    subset and truncating afterwards: the feasible-subset count is combinatorial in the
+    number of released customers, and materializing it all before truncation is what
+    caused unbounded memory growth on subproblems larger than the ~12-customer default."""
     subsets: list[tuple[int, ...]] = []
     current: list[int] = []
 
     def backtrack(start: int, current_demand: float) -> None:
+        if len(subsets) >= limit:
+            return
         if len(current) >= 2:
             subsets.append(tuple(current))
+            if len(subsets) >= limit:
+                return
         if len(current) >= max_subset_size:
             return
         for index in range(start, len(customers)):
@@ -182,6 +202,8 @@ def _feasible_customer_subsets(
             current.append(customer_id)
             backtrack(index + 1, added_demand)
             current.pop()
+            if len(subsets) >= limit:
+                return
 
     backtrack(0, 0.0)
     return subsets
@@ -222,54 +244,61 @@ def _solve_set_partitioning(
         routes_by_depot[candidate.route.depot_id].append(index)
 
     model = gp.Model("fixopt_set_partitioning")
-    model.Params.OutputFlag = 0
-    model.Params.Seed = seed
-    if config.mip_time_limit_seconds is not None:
-        model.Params.TimeLimit = config.mip_time_limit_seconds
+    try:
+        model.Params.OutputFlag = 0
+        model.Params.Seed = seed
+        if config.mip_time_limit_seconds is not None:
+            model.Params.TimeLimit = config.mip_time_limit_seconds
 
-    x = model.addVars(len(candidates), vtype=GRB.BINARY, name="x")
-    # Only depots not already opened by a fixed route need an "open" decision (and its cost).
-    open_vars = {
-        depot_id: model.addVar(vtype=GRB.BINARY, name=f"open_{depot_id}")
-        for depot_id in neighborhood.candidate_depot_ids
-        if depot_id not in already_open_depots
-    }
+        x = model.addVars(len(candidates), vtype=GRB.BINARY, name="x")
+        # Only depots not already opened by a fixed route need an "open" decision (and its cost).
+        open_vars = {
+            depot_id: model.addVar(vtype=GRB.BINARY, name=f"open_{depot_id}")
+            for depot_id in neighborhood.candidate_depot_ids
+            if depot_id not in already_open_depots
+        }
 
-    for customer_id in neighborhood.released_customer_ids:
-        covering = [index for index, candidate in enumerate(candidates) if customer_id in candidate.customer_ids]
-        model.addConstr(gp.quicksum(x[index] for index in covering) == 1, name=f"cover_{customer_id}")
+        for customer_id in neighborhood.released_customer_ids:
+            covering = [index for index, candidate in enumerate(candidates) if customer_id in candidate.customer_ids]
+            model.addConstr(gp.quicksum(x[index] for index in covering) == 1, name=f"cover_{customer_id}")
 
-    for depot_id in neighborhood.candidate_depot_ids:
-        depot = instance.depots_by_id[depot_id]
-        depot_route_indices = routes_by_depot.get(depot_id, [])
-        model.addConstr(
-            gp.quicksum(x[index] for index in depot_route_indices) + fixed_route_counts.get(depot_id, 0)
-            <= depot.vehicle_limit,
-            name=f"vehicle_limit_{depot_id}",
-        )
-        model.addConstr(
-            gp.quicksum(x[index] * candidates[index].demand for index in depot_route_indices)
-            + fixed_demand.get(depot_id, 0.0)
-            <= depot.capacity,
-            name=f"depot_capacity_{depot_id}",
-        )
-        if depot_id in open_vars:
-            for index in depot_route_indices:
-                model.addConstr(x[index] <= open_vars[depot_id], name=f"link_open_{depot_id}_{index}")
+        for depot_id in neighborhood.candidate_depot_ids:
+            depot = instance.depots_by_id[depot_id]
+            depot_route_indices = routes_by_depot.get(depot_id, [])
+            model.addConstr(
+                gp.quicksum(x[index] for index in depot_route_indices) + fixed_route_counts.get(depot_id, 0)
+                <= depot.vehicle_limit,
+                name=f"vehicle_limit_{depot_id}",
+            )
+            model.addConstr(
+                gp.quicksum(x[index] * candidates[index].demand for index in depot_route_indices)
+                + fixed_demand.get(depot_id, 0.0)
+                <= depot.capacity,
+                name=f"depot_capacity_{depot_id}",
+            )
+            if depot_id in open_vars:
+                for index in depot_route_indices:
+                    model.addConstr(x[index] <= open_vars[depot_id], name=f"link_open_{depot_id}_{index}")
 
-    objective = gp.quicksum(candidates[index].cost * x[index] for index in range(len(candidates)))
-    if open_vars:
-        objective += gp.quicksum(
-            instance.depots_by_id[depot_id].opening_cost * var for depot_id, var in open_vars.items()
-        )
-    model.setObjective(objective, GRB.MINIMIZE)
-    model.optimize()
+        objective = gp.quicksum(candidates[index].cost * x[index] for index in range(len(candidates)))
+        if open_vars:
+            objective += gp.quicksum(
+                instance.depots_by_id[depot_id].opening_cost * var for depot_id, var in open_vars.items()
+            )
+        model.setObjective(objective, GRB.MINIMIZE)
+        model.optimize()
 
-    if model.SolCount == 0:
-        return None, None, int(model.Status)
+        if model.SolCount == 0:
+            return None, None, int(model.Status)
 
-    chosen_routes = [candidates[index].route for index in range(len(candidates)) if x[index].X > 0.5]
-    return chosen_routes, float(model.ObjVal), int(model.Status)
+        chosen_routes = [candidates[index].route for index in range(len(candidates)) if x[index].X > 0.5]
+        return chosen_routes, float(model.ObjVal), int(model.Status)
+    finally:
+        # Gurobi models wrap C-level allocations that Python's refcounting/GC does not
+        # reclaim promptly on their own -- confirmed as the cause of a process ballooning
+        # to ~20GB RSS after a few hundred reopt.py iterations (each building a fresh
+        # model here) on a large-scale instance, without ever raising in Python itself.
+        model.dispose()
 
 
 def gurobi_available() -> bool:
