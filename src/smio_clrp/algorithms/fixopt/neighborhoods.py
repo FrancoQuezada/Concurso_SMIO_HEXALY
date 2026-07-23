@@ -28,6 +28,19 @@ DEFAULT_NEIGHBORHOODS = [
 ]
 
 
+def _candidate_depot_count(instance: Instance) -> int:
+    """Scale the candidate-depot window with instance size. A fixed window of 2-3
+    (the previous hardcoded value everywhere in this module) is reasonable on the
+    5-14-depot small instances, but on the 20-40-depot medium/large instances it
+    means FixOpt can only ever consider the 2-3 nearest depots as an alternative --
+    a genuinely better depot for a released customer/cluster is often outside that
+    narrow window, so a beneficial "close depot A, open depot B" swap is never even
+    offered to the backend to evaluate. Capped at 10 to keep subproblems bounded on
+    instances with very many depots.
+    """
+    return min(10, max(3, len(instance.depots) // 3))
+
+
 def build_neighborhood(
     instance: Instance,
     solution: Solution,
@@ -63,7 +76,7 @@ def depot_neighborhood(
         if route.depot_id == depot_id
         for customer_id in route.customer_ids
     ][:max_customers]
-    candidate_depots = _nearby_depots(instance, depot_id, count=3)
+    candidate_depots = _nearby_depots(instance, depot_id, count=_candidate_depot_count(instance))
     return _make_neighborhood(solution, released, candidate_depots, {"type": "depot", "depot_id": depot_id})
 
 
@@ -86,7 +99,7 @@ def route_neighborhood(
         if len(released) >= max_customers:
             break
     for customer_id in released[:max_customers]:
-        candidate_depots.update(_nearest_depots_for_customer(instance, customer_id, count=2))
+        candidate_depots.update(_nearest_depots_for_customer(instance, customer_id, count=_candidate_depot_count(instance)))
     return _make_neighborhood(
         solution,
         released[:max_customers],
@@ -117,7 +130,7 @@ def boundary_customer_neighborhood(
         {
             depot_id
             for customer_id in released
-            for depot_id in [assigned_depot[customer_id], *_nearest_depots_for_customer(instance, customer_id, 2)]
+            for depot_id in [assigned_depot[customer_id], *_nearest_depots_for_customer(instance, customer_id, _candidate_depot_count(instance))]
         }
     )
     return _make_neighborhood(solution, released, candidate_depots, {"type": "boundary"})
@@ -147,7 +160,7 @@ def expensive_customer_neighborhood(
         {
             depot_id
             for customer_id in released
-            for depot_id in [assigned[customer_id], *_nearest_depots_for_customer(instance, customer_id, 2)]
+            for depot_id in [assigned[customer_id], *_nearest_depots_for_customer(instance, customer_id, _candidate_depot_count(instance))]
         }
     )
     return _make_neighborhood(solution, released, candidate_depots, {"type": "expensive"})
@@ -180,7 +193,7 @@ def route_pair_neighborhood(
     released = (solution.routes[first].customer_ids + solution.routes[second].customer_ids)[:max_customers]
     candidate_depots = sorted({solution.routes[first].depot_id, solution.routes[second].depot_id})
     for customer_id in released:
-        candidate_depots = sorted(set(candidate_depots) | set(_nearest_depots_for_customer(instance, customer_id, 2)))
+        candidate_depots = sorted(set(candidate_depots) | set(_nearest_depots_for_customer(instance, customer_id, _candidate_depot_count(instance))))
     return _make_neighborhood(
         solution,
         released,
