@@ -135,7 +135,12 @@ def _generate_candidate_routes(instance: Instance, neighborhood: FixOptNeighborh
     # otherwise duplicate the singleton loop), so there is no overlap left to deduplicate --
     # the cap now applies to exactly the "extra" multi-customer candidates it's documented to.
     max_subset_size = _max_candidate_subset_size(instance, demand_by_customer)
-    subsets = _feasible_customer_subsets(released, demand_by_customer, instance.vehicle_capacity, max_subset_size)
+    # Budget subsets (not (subset, depot) pairs) so the depot loop below can still expand
+    # each subset across every candidate depot without the generator being re-driven.
+    subset_budget = max(1, MAX_EXTRA_CANDIDATE_ROUTES // max(1, len(depot_ids)))
+    subsets = _feasible_customer_subsets(
+        released, demand_by_customer, instance.vehicle_capacity, max_subset_size, subset_budget
+    )
     extra = 0
     for subset in subsets:
         for depot_id in depot_ids:
@@ -161,17 +166,33 @@ def _feasible_customer_subsets(
     demand: dict[int, float],
     capacity: float,
     max_subset_size: int,
-) -> list[tuple[int, ...]]:
-    """Subsets of size >= 2 of released customers whose demand fits one vehicle, up to
-    max_subset_size. Size-1 subsets are excluded on purpose: _generate_candidate_routes
+    budget: int | None = None,
+):
+    """Yield subsets of size >= 2 of released customers whose demand fits one vehicle, up
+    to max_subset_size. Size-1 subsets are excluded on purpose: _generate_candidate_routes
     always adds every (customer, depot) singleton separately, so including them here too
-    would just duplicate that work."""
-    subsets: list[tuple[int, ...]] = []
-    current: list[int] = []
+    would just duplicate that work.
 
-    def backtrack(start: int, current_demand: float) -> None:
+    Lazily generated and stoppable via `budget`: for the default small (12-25 customer)
+    subproblem windows the full combinatorial space is cheap either way, but a caller that
+    releases hundreds of customers at once (e.g. a whole-instance re-optimization) would
+    otherwise force this to materialize a combinatorially exploding subset list *before*
+    the caller's own cap gets a chance to apply -- confirmed to hang indefinitely on a
+    200-customer neighborhood. Stopping generation itself at `budget` keeps that case fast
+    without changing behavior for windows small enough to never hit the budget anyway.
+    """
+    current: list[int] = []
+    yielded = 0
+
+    def backtrack(start: int, current_demand: float):
+        nonlocal yielded
+        if budget is not None and yielded >= budget:
+            return
         if len(current) >= 2:
-            subsets.append(tuple(current))
+            yield tuple(current)
+            yielded += 1
+            if budget is not None and yielded >= budget:
+                return
         if len(current) >= max_subset_size:
             return
         for index in range(start, len(customers)):
@@ -180,11 +201,12 @@ def _feasible_customer_subsets(
             if added_demand > capacity + EPS:
                 continue
             current.append(customer_id)
-            backtrack(index + 1, added_demand)
+            yield from backtrack(index + 1, added_demand)
             current.pop()
+            if budget is not None and yielded >= budget:
+                return
 
-    backtrack(0, 0.0)
-    return subsets
+    yield from backtrack(0, 0.0)
 
 
 def _sequence_route(instance: Instance, depot_id: int, customer_ids: tuple[int, ...]) -> Route:
