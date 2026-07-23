@@ -32,6 +32,13 @@ parser.add_argument("--output", required=True)
 parser.add_argument("--backend", choices=["heuristic", "mip"], default="mip")
 parser.add_argument("--max-customers-per-subproblem", type=int, default=25)
 parser.add_argument("--max-routes-per-subproblem", type=int, default=6)
+parser.add_argument(
+    "--neighborhood-types",
+    default=None,
+    help="Comma-separated neighborhood types to force (e.g. 'route' with high "
+    "--max-routes/customers-per-subproblem re-optimizes the WHOLE instance as one set-"
+    "partitioning MIP each iteration, instead of rotating through small local windows).",
+)
 parser.add_argument("--iterations", type=int, default=2000)
 parser.add_argument("--time-limit", type=float, default=180.0)
 parser.add_argument("--mip-time-limit", type=float, default=15.0)
@@ -58,6 +65,7 @@ solver = FixOptimizeSolver(
             "mip_time_limit": args.mip_time_limit,
             "max_customers_per_subproblem": args.max_customers_per_subproblem,
             "max_routes_per_subproblem": args.max_routes_per_subproblem,
+            "neighborhood_types": args.neighborhood_types,
         },
     ),
 )
