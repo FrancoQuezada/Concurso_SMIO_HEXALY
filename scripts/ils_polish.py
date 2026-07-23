@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gc
 import random
 import sys
 import time
@@ -76,13 +77,17 @@ while round_num < args.rounds and time.perf_counter() - t0 < args.time_limit:
             repair_result = REPAIR_OPERATORS[repair_name](
                 instance, destroy_result.partial_solution, destroy_result.removed_customer_ids, rng
             )
+            if not repair_result.success or repair_result.solution is None:
+                continue
+            perturbed = repair_result.solution
+            perturbed_validation = validate_solution(instance, perturbed)
         except Exception as exc:
+            # A transient failure here (including a MemoryError under memory pressure
+            # from many hours of accumulated allocations on large instances) must not
+            # abort a run that may still have hours of budget left -- treat it like any
+            # other failed perturbation and keep going with the current incumbent.
             print(f"round {round_num}: perturbation failed ({exc}), skipping")
             continue
-        if not repair_result.success or repair_result.solution is None:
-            continue
-        perturbed = repair_result.solution
-        perturbed_validation = validate_solution(instance, perturbed)
         if not perturbed_validation.is_feasible:
             continue
         current = perturbed
@@ -90,11 +95,18 @@ while round_num < args.rounds and time.perf_counter() - t0 < args.time_limit:
     remaining_time = args.time_limit - (time.perf_counter() - t0)
     if remaining_time <= 0:
         break
-    polished = improve_solution(instance, current, max_iterations=200, time_limit_seconds=min(60.0, remaining_time))
-    polished_cost = objective_cost(instance, polished)
-    polished_validation = validate_solution(instance, polished)
+    try:
+        polished = improve_solution(instance, current, max_iterations=200, time_limit_seconds=min(60.0, remaining_time))
+        polished_cost = objective_cost(instance, polished)
+        polished_validation = validate_solution(instance, polished)
+    except Exception as exc:
+        print(f"round {round_num}: polishing failed ({exc}), skipping")
+        continue
     if not polished_validation.is_feasible:
         continue
+
+    if round_num % 20 == 0:
+        gc.collect()
 
     if polished_cost + 1e-6 < best_cost:
         best = clone_solution(polished)
