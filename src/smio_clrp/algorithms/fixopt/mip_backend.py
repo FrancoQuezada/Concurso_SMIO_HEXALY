@@ -280,54 +280,61 @@ def _solve_set_partitioning(
         routes_by_depot[candidate.route.depot_id].append(index)
 
     model = gp.Model("fixopt_set_partitioning")
-    model.Params.OutputFlag = 0
-    model.Params.Seed = seed
-    if config.mip_time_limit_seconds is not None:
-        model.Params.TimeLimit = config.mip_time_limit_seconds
+    try:
+        model.Params.OutputFlag = 0
+        model.Params.Seed = seed
+        if config.mip_time_limit_seconds is not None:
+            model.Params.TimeLimit = config.mip_time_limit_seconds
 
-    x = model.addVars(len(candidates), vtype=GRB.BINARY, name="x")
-    # Only depots not already opened by a fixed route need an "open" decision (and its cost).
-    open_vars = {
-        depot_id: model.addVar(vtype=GRB.BINARY, name=f"open_{depot_id}")
-        for depot_id in neighborhood.candidate_depot_ids
-        if depot_id not in already_open_depots
-    }
+        x = model.addVars(len(candidates), vtype=GRB.BINARY, name="x")
+        # Only depots not already opened by a fixed route need an "open" decision (and its cost).
+        open_vars = {
+            depot_id: model.addVar(vtype=GRB.BINARY, name=f"open_{depot_id}")
+            for depot_id in neighborhood.candidate_depot_ids
+            if depot_id not in already_open_depots
+        }
 
-    for customer_id in neighborhood.released_customer_ids:
-        covering = [index for index, candidate in enumerate(candidates) if customer_id in candidate.customer_ids]
-        model.addConstr(gp.quicksum(x[index] for index in covering) == 1, name=f"cover_{customer_id}")
+        for customer_id in neighborhood.released_customer_ids:
+            covering = [index for index, candidate in enumerate(candidates) if customer_id in candidate.customer_ids]
+            model.addConstr(gp.quicksum(x[index] for index in covering) == 1, name=f"cover_{customer_id}")
 
-    for depot_id in neighborhood.candidate_depot_ids:
-        depot = instance.depots_by_id[depot_id]
-        depot_route_indices = routes_by_depot.get(depot_id, [])
-        model.addConstr(
-            gp.quicksum(x[index] for index in depot_route_indices) + fixed_route_counts.get(depot_id, 0)
-            <= depot.vehicle_limit,
-            name=f"vehicle_limit_{depot_id}",
-        )
-        model.addConstr(
-            gp.quicksum(x[index] * candidates[index].demand for index in depot_route_indices)
-            + fixed_demand.get(depot_id, 0.0)
-            <= depot.capacity,
-            name=f"depot_capacity_{depot_id}",
-        )
-        if depot_id in open_vars:
-            for index in depot_route_indices:
-                model.addConstr(x[index] <= open_vars[depot_id], name=f"link_open_{depot_id}_{index}")
+        for depot_id in neighborhood.candidate_depot_ids:
+            depot = instance.depots_by_id[depot_id]
+            depot_route_indices = routes_by_depot.get(depot_id, [])
+            model.addConstr(
+                gp.quicksum(x[index] for index in depot_route_indices) + fixed_route_counts.get(depot_id, 0)
+                <= depot.vehicle_limit,
+                name=f"vehicle_limit_{depot_id}",
+            )
+            model.addConstr(
+                gp.quicksum(x[index] * candidates[index].demand for index in depot_route_indices)
+                + fixed_demand.get(depot_id, 0.0)
+                <= depot.capacity,
+                name=f"depot_capacity_{depot_id}",
+            )
+            if depot_id in open_vars:
+                for index in depot_route_indices:
+                    model.addConstr(x[index] <= open_vars[depot_id], name=f"link_open_{depot_id}_{index}")
 
-    objective = gp.quicksum(candidates[index].cost * x[index] for index in range(len(candidates)))
-    if open_vars:
-        objective += gp.quicksum(
-            instance.depots_by_id[depot_id].opening_cost * var for depot_id, var in open_vars.items()
-        )
-    model.setObjective(objective, GRB.MINIMIZE)
-    model.optimize()
+        objective = gp.quicksum(candidates[index].cost * x[index] for index in range(len(candidates)))
+        if open_vars:
+            objective += gp.quicksum(
+                instance.depots_by_id[depot_id].opening_cost * var for depot_id, var in open_vars.items()
+            )
+        model.setObjective(objective, GRB.MINIMIZE)
+        model.optimize()
 
-    if model.SolCount == 0:
-        return None, None, int(model.Status)
+        if model.SolCount == 0:
+            return None, None, int(model.Status)
 
-    chosen_routes = [candidates[index].route for index in range(len(candidates)) if x[index].X > 0.5]
-    return chosen_routes, float(model.ObjVal), int(model.Status)
+        chosen_routes = [candidates[index].route for index in range(len(candidates)) if x[index].X > 0.5]
+        return chosen_routes, float(model.ObjVal), int(model.Status)
+    finally:
+        # Gurobi models wrap C-level allocations that Python's refcounting/GC does not
+        # reclaim promptly on their own; across the hundreds of subproblems solved in a
+        # multi-hour reopt.py run this adds up. Cheap insurance on top of the subset-budget
+        # fix above, which addresses the much larger combinatorial-explosion source.
+        model.dispose()
 
 
 def gurobi_available() -> bool:
