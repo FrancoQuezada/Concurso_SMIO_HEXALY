@@ -213,4 +213,6 @@ def _config_from_solver_config(config: SolverConfig) -> FixOptConfig:
         accept_worsening=bool(metadata.get("accept_worsening", False)),
         local_search_after_subproblem=bool(metadata.get("local_search_after_subproblem", True)),
         verbose=bool(metadata.get("verbose", False)),
+        max_extra_candidate_routes=int(metadata.get("max_extra_candidate_routes", 2000)),
+        max_subset_size_slack=int(metadata.get("max_subset_size_slack", 2)),
     )
