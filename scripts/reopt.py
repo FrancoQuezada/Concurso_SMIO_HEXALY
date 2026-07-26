@@ -39,6 +39,24 @@ parser.add_argument(
     "--max-routes/customers-per-subproblem re-optimizes the WHOLE instance as one set-"
     "partitioning MIP each iteration, instead of rotating through small local windows).",
 )
+parser.add_argument(
+    "--max-candidate-routes",
+    type=int,
+    default=2000,
+    help="Cap on generated multi-customer candidate routes per MIP subproblem (on top of "
+    "always-included singletons). The 2000 default was sized for the 12-25 customer "
+    "default window; a small, fully-released whole-instance subproblem (few dozen "
+    "customers, few depots) can afford a much larger budget for a genuinely exhaustive "
+    "re-optimization instead of a thin, easily-infeasible candidate set.",
+)
+parser.add_argument(
+    "--max-subset-size-slack",
+    type=int,
+    default=2,
+    help="Slack added on top of capacity/avg-demand 'typical route size' when capping "
+    "candidate subset sizes. Too small a value can make the model unable to represent the "
+    "incumbent's own longer routes as a candidate, showing up as spurious infeasibilities.",
+)
 parser.add_argument("--iterations", type=int, default=2000)
 parser.add_argument("--time-limit", type=float, default=180.0)
 parser.add_argument("--mip-time-limit", type=float, default=15.0)
@@ -66,6 +84,8 @@ solver = FixOptimizeSolver(
             "max_customers_per_subproblem": args.max_customers_per_subproblem,
             "max_routes_per_subproblem": args.max_routes_per_subproblem,
             "neighborhood_types": args.neighborhood_types,
+            "max_extra_candidate_routes": args.max_candidate_routes,
+            "max_subset_size_slack": args.max_subset_size_slack,
         },
     ),
 )

@@ -52,7 +52,9 @@ class MIPFixOptBackend:
         if not neighborhood.candidate_depot_ids:
             return FixOptResult(None, False, self.backend_name, {"error": "no candidate depots for MIP subproblem"})
 
-        candidates = _generate_candidate_routes(instance, neighborhood)
+        candidates = _generate_candidate_routes(
+            instance, neighborhood, config.max_extra_candidate_routes, config.max_subset_size_slack
+        )
         if not candidates:
             return FixOptResult(None, False, self.backend_name, {"error": "no feasible candidate routes generated"})
 
@@ -99,7 +101,12 @@ class _RouteCandidate:
     customer_ids: frozenset[int]
 
 
-def _generate_candidate_routes(instance: Instance, neighborhood: FixOptNeighborhood) -> list[_RouteCandidate]:
+def _generate_candidate_routes(
+    instance: Instance,
+    neighborhood: FixOptNeighborhood,
+    max_extra_candidates: int = MAX_EXTRA_CANDIDATE_ROUTES,
+    max_subset_size_slack: int = 2,
+) -> list[_RouteCandidate]:
     """Enumerate candidate routes: one per (feasible customer subset, candidate depot) pair."""
     released = neighborhood.released_customer_ids
     demand_by_customer = {customer_id: instance.customers_by_id[customer_id].demand for customer_id in released}
@@ -134,31 +141,60 @@ def _generate_candidate_routes(instance: Instance, neighborhood: FixOptNeighborh
     # the singletons above, and _feasible_customer_subsets excludes size-1 subsets (they'd
     # otherwise duplicate the singleton loop), so there is no overlap left to deduplicate --
     # the cap now applies to exactly the "extra" multi-customer candidates it's documented to.
-    max_subset_size = _max_candidate_subset_size(instance, demand_by_customer)
+    max_subset_size = _max_candidate_subset_size(instance, demand_by_customer, max_subset_size_slack)
     # Budget subsets (not (subset, depot) pairs) so the depot loop below can still expand
     # each subset across every candidate depot without the generator being re-driven.
-    subset_budget = max(1, MAX_EXTRA_CANDIDATE_ROUTES // max(1, len(depot_ids)))
+    subset_budget = max(1, max_extra_candidates // max(1, len(depot_ids)))
+    # _feasible_customer_subsets explores in the given customer order via DFS, so a plain
+    # ascending-ID order (released is always sorted) concentrates almost all subset variety
+    # on the first handful of customers once the budget is hit on a large released set --
+    # confirmed to starve later customers down to singleton-only candidates and force a
+    # spurious "infeasible" vehicle_limit/cover conflict on a >60-customer whole-instance
+    # release. Ordering customers by a nearest-neighbor spatial chain instead means an
+    # exhausted budget still leaves every customer with subset candidates drawn from
+    # whichever neighbors are physically close to it -- both more fairly distributed and
+    # more likely to be genuinely useful routes than an arbitrary ID-based grouping.
+    spatial_order = _spatial_order(instance, released)
     subsets = _feasible_customer_subsets(
-        released, demand_by_customer, instance.vehicle_capacity, max_subset_size, subset_budget
+        spatial_order, demand_by_customer, instance.vehicle_capacity, max_subset_size, subset_budget
     )
     extra = 0
     for subset in subsets:
         for depot_id in depot_ids:
-            if extra >= MAX_EXTRA_CANDIDATE_ROUTES:
+            if extra >= max_extra_candidates:
                 return candidates
             candidates.append(make_candidate(depot_id, subset))
             extra += 1
     return candidates
 
 
-def _max_candidate_subset_size(instance: Instance, demand_by_customer: dict[int, float]) -> int:
+def _spatial_order(instance: Instance, customer_ids: list[int]) -> list[int]:
+    """Greedy nearest-neighbor chain over the released customers, so subset enumeration
+    (which explores in list order) naturally groups spatially close customers together
+    instead of following an arbitrary ID order."""
+    if len(customer_ids) <= 2:
+        return list(customer_ids)
+    remaining = set(customer_ids)
+    current = customer_ids[0]
+    remaining.remove(current)
+    ordered = [current]
+    while remaining:
+        current = min(remaining, key=lambda cid: distance(instance, ("customer", current), ("customer", cid)))
+        remaining.remove(current)
+        ordered.append(current)
+    return ordered
+
+
+def _max_candidate_subset_size(
+    instance: Instance, demand_by_customer: dict[int, float], slack: int = 2
+) -> int:
     """Cap subset size near a "typical" route's customer count (capacity / average demand),
     with a little slack, instead of enumerating up to the full capacity-limited subset size."""
     if not demand_by_customer:
         return 0
     avg_demand = sum(demand_by_customer.values()) / len(demand_by_customer)
     typical_route_size = max(1, math.ceil(instance.vehicle_capacity / max(avg_demand, EPS)))
-    return min(len(demand_by_customer), typical_route_size + 2)
+    return min(len(demand_by_customer), typical_route_size + slack)
 
 
 def _feasible_customer_subsets(
