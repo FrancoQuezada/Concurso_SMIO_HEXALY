@@ -1,0 +1,32 @@
+python scripts\assign_customers_mip.py `
+  data\official\clrp-large-03.txt `
+  --output solutions\clrp-large-03-assigned.sol `
+  --candidates 8 `
+  --time-limit 90
+
+python scripts\intensify_by_depot.py `
+  data\official\clrp-large-03.txt `
+  solutions\clrp-large-03-assigned.sol `
+  --output solutions\clrp-large-03-seed.sol `
+  --seconds-per-depot 30 `
+  --workers 6
+
+python scripts\solve_large_pyvrp.py `
+  data\official\clrp-large-03.txt `
+  --output solutions\clrp-large-03-pyvrp-300.sol `
+  --time-limit 300 `
+  --seed 1 `
+  --initial-solution solutions\clrp-large-03-seed.sol `
+  --quiet
+
+python scripts\reassign_routes_mip.py `
+  data\official\clrp-medium-09.txt `
+  solutions\clrp-medium-09-pyvrp-300.sol `
+  --output solutions\clrp-medium-09-winning.sol `
+  --time-limit 60 `
+  --allow-overloaded-seed
+
+
+--workers controla cuantos depósitos se optimizan al mismo tiempo (o sea que no mejora la solución final). --> Carga la CPU
+--seconds-per-depot 60 indica el tiempo que está en cada depósito (este puede mejorar la solución final)
+--candidates 9 dice que cada cliente puede elegir entre sus 9 depósitos más cercanos, otorga flexibilidad para que Gurobi evite depósitos saturados, aumenta el tiempo de procesamiento
