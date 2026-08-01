@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from smio_clrp.algorithms.common import EPS, depot_loads, route_load
+from smio_clrp.core.distance import distance
 from smio_clrp.core.instance import Instance
 from smio_clrp.core.solution import Route, Solution
 from smio_clrp.evaluation.cost import route_distance
 from smio_clrp.evaluation.validator import validate_solution
+
+NEARBY_DEPOT_COUNT = 6
 
 
 def inter_route_two_opt_star(instance: Instance, solution: Solution) -> Solution:
@@ -19,10 +22,30 @@ def inter_route_two_opt_star(instance: Instance, solution: Solution) -> Solution
     exactly the kind of move needed to fix two routes that each detour toward the other's
     territory. Depots may differ: a customer's depot assignment changes if it ends up in
     a tail reattached to the other route's depot.
+
+    Deliberately full-recompute (not delta-based): because each route closes at its OWN
+    depot rather than a shared endpoint, swapping tails changes FOUR edges per candidate
+    (the branch point and the closing-to-depot edge, in both routes), not the two a classic
+    single-tour 2-opt* assumes. An earlier attempt at an O(1)-per-candidate delta using only
+    two edges was verified wrong empirically (it accepted a +6669 cost move as an
+    "improvement"), so this stays as route_distance recomputation, which is at least always
+    correct, over a subtly-wrong incremental version.
+
+    Restricts candidate route pairs to those whose depots are within each other's
+    NEARBY_DEPOT_COUNT nearest (or the same depot): the full-recompute cost above makes
+    every candidate pair expensive, and on a 30-40 depot large-scale instance almost all
+    O(routes^2) pairs are between routes on opposite sides of the map, where a tail
+    exchange essentially never improves anything anyway. This is a pure candidate filter,
+    not a change to the cost math -- every pair actually evaluated still gets the same
+    exact recompute-based delta as before.
     """
     routes = solution.routes
     loads = depot_loads(instance, routes)
     route_loads = [route_load(instance, route) for route in routes]
+    nearby_depots = {
+        depot_id: set(_nearby_depot_ids(instance, depot_id))
+        for depot_id in {route.depot_id for route in routes}
+    }
 
     best_delta = -EPS
     best_move: tuple[int, int, int, int] | None = None
@@ -32,6 +55,8 @@ def inter_route_two_opt_star(instance: Instance, solution: Solution) -> Solution
         first_customers = first.customer_ids
         for second_index in range(first_index + 1, len(routes)):
             second = routes[second_index]
+            if second.depot_id not in nearby_depots[first.depot_id]:
+                continue
             second_customers = second.customer_ids
             if first.depot_id == second.depot_id:
                 same_depot_capacity_ok = True
@@ -111,3 +136,13 @@ def inter_route_two_opt_star(instance: Instance, solution: Solution) -> Solution
     if not validation.is_feasible:
         return solution
     return candidate
+
+
+def _nearby_depot_ids(instance: Instance, depot_id: int) -> list[int]:
+    return [
+        item.id
+        for item in sorted(
+            instance.depots,
+            key=lambda item: (distance(instance, ("depot", depot_id), ("depot", item.id)), item.id),
+        )[:NEARBY_DEPOT_COUNT]
+    ]
